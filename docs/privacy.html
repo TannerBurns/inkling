@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - Inkling</title>
+  <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/TannerBurns/inkling/main/public/inkling.png">
+  <style>
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --text-primary: #f0f0f5;
+      --text-secondary: #a0a0b0;
+      --accent: #7c3aed;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+    .container {
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 3rem 2rem;
+    }
+    header {
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    header a {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    h1 { font-size: 2rem; margin: 1rem 0 0.5rem; }
+    .date { color: var(--text-secondary); font-size: 0.9rem; }
+    h2 { font-size: 1.25rem; margin: 2rem 0 1rem; color: var(--accent); }
+    p, ul { margin-bottom: 1rem; color: var(--text-secondary); }
+    ul { padding-left: 1.5rem; }
+    li { margin-bottom: 0.5rem; }
+    strong { color: var(--text-primary); }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <a href="./">← Back to Inkling</a>
+      <h1>Privacy Policy</h1>
+      <p class="date">Last updated: December 21, 2024</p>
+    </header>
+    
+    <h2>Overview</h2>
+    <p>Inkling is a <strong>local-first</strong> note-taking and calendar application. Your privacy is our priority - all your data stays on your device.</p>
+    
+    <h2>Data Storage</h2>
+    <p>All of the following data is stored <strong>locally on your device only</strong>:</p>
+    <ul>
+      <li>Notes and documents</li>
+      <li>Calendar events</li>
+      <li>Folders and organization</li>
+      <li>Application settings</li>
+      <li>Conversation history with AI features</li>
+    </ul>
+    <p><strong>We do not operate any servers that store your personal data.</strong></p>
+    
+    <h2>Google Calendar Integration</h2>
+    <p>When you optionally connect Google Calendar:</p>
+    <ul>
+      <li><strong>What we access:</strong> Read-only access to your Google Calendar events and your email (to display connection status)</li>
+      <li><strong>How we use it:</strong> Calendar events are synced to your local database only</li>
+      <li><strong>What we don't do:</strong> We do not store your Google data on external servers, share it with third parties, or modify your Google Calendar</li>
+    </ul>
+    <p>Google OAuth tokens are stored locally on your device. You can disconnect your Google account at any time from Settings.</p>
+    
+    <h2>AI Features</h2>
+    <p>If you use AI-powered features (chat, summarization, etc.):</p>
+    <ul>
+      <li>AI requests are sent directly to your configured AI provider (OpenAI, Anthropic, Ollama, etc.)</li>
+      <li>We do not proxy or store these requests</li>
+      <li>Your API keys are stored locally on your device</li>
+    </ul>
+    
+    <h2>Analytics & Tracking</h2>
+    <p>Inkling does <strong>not</strong> include any analytics, tracking, cookies, or tracking pixels.</p>
+    
+    <h2>Data Sharing</h2>
+    <p>We do <strong>not</strong> share any of your data with third parties because we do not have access to your data.</p>
+    
+    <h2>Contact</h2>
+    <p>For privacy questions, please open an issue at: <a href="https://github.com/TannerBurns/inkling/issues">GitHub Issues</a></p>
+  </div>
+</body>
+</html>
+

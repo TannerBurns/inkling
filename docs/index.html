@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inkling - AI-Powered Note-Taking</title>
+  <meta name="description" content="Inkling is a local-first, AI-powered note-taking app that connects your thoughts. Available for macOS, Windows, and Linux.">
+  <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/TannerBurns/inkling/main/public/inkling.png">
+  <style>
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --text-primary: #f0f0f5;
+      --text-secondary: #a0a0b0;
+      --accent: #7c3aed;
+      --accent-light: rgba(124, 58, 237, 0.15);
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+    
+    .logo {
+      width: 120px;
+      height: 120px;
+      margin-bottom: 1.5rem;
+      border-radius: 24px;
+    }
+    
+    h1 {
+      font-size: 3rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .tagline {
+      font-size: 1.25rem;
+      color: var(--text-secondary);
+      margin-bottom: 2rem;
+    }
+    
+    .features {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: center;
+      margin-bottom: 2.5rem;
+    }
+    
+    .feature {
+      background: var(--bg-secondary);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+    
+    .feature strong {
+      color: var(--text-primary);
+    }
+    
+    .buttons {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 3rem;
+    }
+    
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.875rem 1.75rem;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+    
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #6d28d9;
+      transform: translateY(-2px);
+    }
+    
+    .btn-secondary {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    
+    .platforms {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+    
+    footer {
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    footer a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      margin: 0 0.75rem;
+      transition: color 0.2s;
+    }
+    
+    footer a:hover {
+      color: var(--accent);
+    }
+    
+    .divider {
+      color: rgba(255, 255, 255, 0.2);
+    }
+
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 2rem;
+      }
+      .tagline {
+        font-size: 1rem;
+      }
+      .container {
+        padding: 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <img src="https://raw.githubusercontent.com/TannerBurns/inkling/main/public/inkling.png" alt="Inkling Logo" class="logo">
+    <h1>Inkling</h1>
+    <p class="tagline">AI-powered note-taking that connects your thoughts</p>
+    
+    <div class="features">
+      <div class="feature">📝 <strong>Rich Notes</strong> with Markdown</div>
+      <div class="feature">🔍 <strong>Semantic Search</strong></div>
+      <div class="feature">🕸️ <strong>Knowledge Graph</strong></div>
+      <div class="feature">📅 <strong>Calendar</strong> + Google Sync</div>
+      <div class="feature">💬 <strong>Chat</strong> with your notes</div>
+      <div class="feature">🔒 <strong>Local-first</strong> & Private</div>
+    </div>
+    
+    <div class="buttons">
+      <a href="https://github.com/TannerBurns/inkling/releases/latest" class="btn btn-primary">
+        ⬇️ Download
+      </a>
+      <a href="https://github.com/TannerBurns/inkling" class="btn btn-secondary">
+        GitHub
+      </a>
+    </div>
+    
+    <p class="platforms">Available for macOS, Windows, and Linux</p>
+  </div>
+  
+  <footer>
+    <a href="https://github.com/TannerBurns/inkling/blob/main/PRIVACY.md">Privacy Policy</a>
+    <span class="divider">•</span>
+    <a href="https://github.com/TannerBurns/inkling/blob/main/TERMS.md">Terms of Service</a>
+    <span class="divider">•</span>
+    <a href="https://github.com/TannerBurns/inkling/blob/main/LICENSE">MIT License</a>
+  </footer>
+</body>
+</html>
+
