@@ -154,3 +154,31 @@ pub async fn clear_google_credentials(pool: State<'_, AppPool>) -> Result<(), St
     Ok(())
 }
 
+/// Get the source of Google credentials
+/// Returns: "database", "environment", "embedded", or "none"
+#[tauri::command]
+pub async fn get_google_credential_source(pool: State<'_, AppPool>) -> Result<String, String> {
+    let pool_guard = pool.0.read().map_err(|e| e.to_string())?;
+    let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+
+    // Check database first
+    if let Ok(Some(id)) = crate::db::settings::get_setting(&conn, "google_client_id") {
+        if !id.is_empty() {
+            return Ok("database".to_string());
+        }
+    }
+
+    // Check environment variable
+    if std::env::var("GOOGLE_CLIENT_ID").is_ok() {
+        return Ok("environment".to_string());
+    }
+
+    // Check embedded/compile-time
+    if crate::google::config::EMBEDDED_CLIENT_ID.is_some() {
+        return Ok("embedded".to_string());
+    }
+
+    Ok("none".to_string())
+}
+

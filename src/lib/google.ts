@@ -125,3 +125,15 @@ export async function clearGoogleCredentials(): Promise<void> {
   return invoke("clear_google_credentials");
 }
 
+/**
+ * Credential source types
+ */
+export type CredentialSource = "database" | "environment" | "embedded" | "none";
+
+/**
+ * Get the source of the current Google credentials
+ */
+export async function getCredentialSource(): Promise<CredentialSource> {
+  return invoke<CredentialSource>("get_google_credential_source");
+}
+

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Chrome, Loader2, CheckCircle, XCircle, Calendar, Settings, ExternalLink } from "lucide-react";
+import { Chrome, Loader2, CheckCircle, XCircle, Calendar, Settings, ExternalLink, Shield } from "lucide-react";
 import * as googleApi from "../../lib/google";
 import type { GoogleConnectionStatus } from "../../types/google";
+import type { CredentialSource } from "../../lib/google";
 
 /**
  * Google account settings component
@@ -13,6 +14,7 @@ export function GoogleSettings() {
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isSavingCredentials, setIsSavingCredentials] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
+  const [credentialSource, setCredentialSource] = useState<CredentialSource>("none");
   const [connectionStatus, setConnectionStatus] =
     useState<GoogleConnectionStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,12 +34,14 @@ export function GoogleSettings() {
     setIsLoading(true);
     setError(null);
     try {
-      const [configured, status] = await Promise.all([
+      const [configured, status, source] = await Promise.all([
         googleApi.isGoogleConfigured(),
         googleApi.getGoogleConnectionStatus(),
+        googleApi.getCredentialSource(),
       ]);
       setIsConfigured(configured);
       setConnectionStatus(status);
+      setCredentialSource(source);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -110,9 +114,12 @@ export function GoogleSettings() {
   }
 
   async function handleClearCredentials() {
-    if (!confirm("Are you sure you want to remove your Google credentials?")) {
+    if (!confirm("Are you sure you want to remove your saved Google credentials?")) {
       return;
     }
+    
+    setError(null);
+    setSuccessMessage(null);
     
     try {
       await googleApi.clearGoogleCredentials();
@@ -120,6 +127,15 @@ export function GoogleSettings() {
       await loadStatus();
     } catch (err) {
       setError(String(err));
+    }
+  }
+
+  function getCredentialSourceLabel(source: CredentialSource): string {
+    switch (source) {
+      case "database": return "User configured";
+      case "environment": return "Environment variable";
+      case "embedded": return "Built-in";
+      default: return "Not configured";
     }
   }
 
@@ -165,7 +181,99 @@ export function GoogleSettings() {
         </div>
       )}
 
-      {/* Configuration check - show setup form */}
+      {/* Configuration status - show when configured but not connected */}
+      {isConfigured && !connectionStatus?.connected && !showCredentialForm && (
+        <div
+          className="rounded-lg border p-4"
+          style={{
+            backgroundColor: "var(--color-bg-secondary)",
+            borderColor: "var(--color-border)",
+          }}
+        >
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="rounded-full p-2"
+                style={{ backgroundColor: "var(--color-bg-tertiary)" }}
+              >
+                <Calendar
+                  size={20}
+                  style={{ color: "var(--color-text-secondary)" }}
+                />
+              </div>
+              <div>
+                <h4
+                  className="font-medium"
+                  style={{ color: "var(--color-text-primary)" }}
+                >
+                  Google Calendar
+                </h4>
+                <p
+                  className="text-sm"
+                  style={{ color: "var(--color-text-secondary)" }}
+                >
+                  Sync your Google Calendar events
+                </p>
+              </div>
+            </div>
+            {/* Show credential source badge */}
+            <div
+              className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs"
+              style={{
+                backgroundColor: credentialSource === "database" 
+                  ? "rgba(34, 197, 94, 0.1)" 
+                  : "var(--color-bg-tertiary)",
+                color: credentialSource === "database" 
+                  ? "#22c55e" 
+                  : "var(--color-text-tertiary)",
+              }}
+            >
+              <Shield size={12} />
+              {getCredentialSourceLabel(credentialSource)}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleConnect}
+              disabled={isConnecting}
+              className="flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: "#4285f4",
+                color: "white",
+                opacity: isConnecting ? 0.7 : 1,
+              }}
+            >
+              {isConnecting ? (
+                <>
+                  <Loader2 className="animate-spin" size={16} />
+                  Connecting...
+                </>
+              ) : (
+                <>
+                  <Chrome size={16} />
+                  Sign in with Google
+                </>
+              )}
+            </button>
+            {credentialSource === "database" && (
+              <button
+                onClick={handleClearCredentials}
+                className="rounded-md px-3 py-2.5 text-sm transition-colors"
+                style={{
+                  backgroundColor: "var(--color-bg-tertiary)",
+                  color: "var(--color-text-tertiary)",
+                }}
+                title="Remove saved credentials"
+              >
+                <Settings size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Not configured - show setup options */}
       {!isConfigured && !showCredentialForm && (
         <div
           className="rounded-lg border p-4"
@@ -379,87 +487,26 @@ export function GoogleSettings() {
             </button>
           </div>
 
-          {connectionStatus.connectedAt && (
-            <p
-              className="mt-3 text-xs"
-              style={{ color: "var(--color-text-tertiary)" }}
-            >
-              Connected on{" "}
-              {new Date(connectionStatus.connectedAt).toLocaleDateString()}
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Disconnected state */}
-      {isConfigured && !connectionStatus?.connected && (
-        <div
-          className="rounded-lg border p-4"
-          style={{
-            backgroundColor: "var(--color-bg-secondary)",
-            borderColor: "var(--color-border)",
-          }}
-        >
-          <div className="mb-4 flex items-center gap-3">
-            <div
-              className="rounded-full p-2"
-              style={{ backgroundColor: "var(--color-bg-tertiary)" }}
-            >
-              <Calendar
-                size={20}
-                style={{ color: "var(--color-text-secondary)" }}
-              />
-            </div>
-            <div>
-              <h4
-                className="font-medium"
-                style={{ color: "var(--color-text-primary)" }}
-              >
-                Google Calendar
-              </h4>
+          <div className="mt-3 flex items-center justify-between">
+            {connectionStatus.connectedAt && (
               <p
-                className="text-sm"
-                style={{ color: "var(--color-text-secondary)" }}
+                className="text-xs"
+                style={{ color: "var(--color-text-tertiary)" }}
               >
-                Sync your Google Calendar events
+                Connected on{" "}
+                {new Date(connectionStatus.connectedAt).toLocaleDateString()}
               </p>
-            </div>
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={handleConnect}
-              disabled={isConnecting}
-              className="flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-colors"
-              style={{
-                backgroundColor: "#4285f4",
-                color: "white",
-                opacity: isConnecting ? 0.7 : 1,
-              }}
-            >
-              {isConnecting ? (
-                <>
-                  <Loader2 className="animate-spin" size={16} />
-                  Connecting...
-                </>
-              ) : (
-                <>
-                  <Chrome size={16} />
-                  Sign in with Google
-                </>
-              )}
-            </button>
-            <button
-              onClick={handleClearCredentials}
-              className="rounded-md px-3 py-2.5 text-sm transition-colors"
+            )}
+            <div
+              className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs"
               style={{
                 backgroundColor: "var(--color-bg-tertiary)",
                 color: "var(--color-text-tertiary)",
               }}
-              title="Remove credentials"
             >
-              <Settings size={16} />
-            </button>
+              <Shield size={10} />
+              {getCredentialSourceLabel(credentialSource)}
+            </div>
           </div>
         </div>
       )}
