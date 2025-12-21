@@ -34,7 +34,6 @@ export function GoogleSettings() {
   async function loadStatus() {
     setIsLoading(true);
     setError(null);
-    setSuccessMessage(null);
     try {
       const [configured, status, source] = await Promise.all([
         googleApi.isGoogleConfigured(),
@@ -54,7 +53,6 @@ export function GoogleSettings() {
   async function handleConnect() {
     setIsConnecting(true);
     setError(null);
-    setSuccessMessage(null);
     try {
       await googleApi.initiateGoogleAuth();
       // Reload status after successful auth
@@ -77,7 +75,6 @@ export function GoogleSettings() {
 
     setIsDisconnecting(true);
     setError(null);
-    setSuccessMessage(null);
     try {
       await googleApi.disconnectGoogleAccount();
       setConnectionStatus({
@@ -100,7 +97,8 @@ export function GoogleSettings() {
       setError("Client ID is required");
       return;
     }
-    if (!clientSecret.trim()) {
+    // Client secret is only required if no existing secret is set
+    if (!clientSecret.trim() && !existingSecretSet) {
       setError("Client Secret is required");
       return;
     }
@@ -137,31 +135,6 @@ export function GoogleSettings() {
       await loadStatus();
     } catch (err) {
       setError(String(err));
-    }
-  }
-
-  async function handleOpenCredentialForm() {
-    setError(null);
-    setSuccessMessage(null);
-    
-    try {
-      // Fetch current credentials to pre-populate the form
-      const current = await googleApi.getCurrentCredentials();
-      if (current.clientId) {
-        setClientId(current.clientId);
-        setExistingSecretSet(current.clientSecretSet);
-      } else {
-        setClientId("");
-        setExistingSecretSet(false);
-      }
-      setClientSecret(""); // Never pre-populate the secret for security
-      setShowCredentialForm(true);
-    } catch (err) {
-      // If we can't fetch, just show empty form
-      setClientId("");
-      setClientSecret("");
-      setExistingSecretSet(false);
-      setShowCredentialForm(true);
     }
   }
 
@@ -333,7 +306,24 @@ export function GoogleSettings() {
           
           <div className="flex gap-2">
             <button
-              onClick={handleOpenCredentialForm}
+              onClick={async () => {
+                // Check if credentials already exist to enable "keep existing" feature
+                try {
+                  const current = await googleApi.getCurrentCredentials();
+                  if (current.clientId) {
+                    setClientId(current.clientId);
+                    setExistingSecretSet(current.clientSecretSet);
+                  } else {
+                    setClientId("");
+                    setExistingSecretSet(false);
+                  }
+                } catch {
+                  setClientId("");
+                  setExistingSecretSet(false);
+                }
+                setClientSecret("");
+                setShowCredentialForm(true);
+              }}
               className="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
               style={{
                 backgroundColor: "var(--color-accent)",
@@ -344,7 +334,7 @@ export function GoogleSettings() {
               Configure Credentials
             </button>
             <a
-              href="https://github.com/TannerBurns/inkling#-google-calendar-integration"
+              href="https://github.com/TannerBurns/inkling#setting-up-google-calendar-sync"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
@@ -382,7 +372,7 @@ export function GoogleSettings() {
           >
             Follow the{" "}
             <a
-              href="https://github.com/TannerBurns/inkling#-google-calendar-integration"
+              href="https://github.com/TannerBurns/inkling#setting-up-google-calendar-sync"
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: "var(--color-accent)" }}
@@ -468,6 +458,7 @@ export function GoogleSettings() {
                   setShowCredentialForm(false);
                   setClientId("");
                   setClientSecret("");
+                  setExistingSecretSet(false);
                   setError(null);
                 }}
                 className="rounded-md px-4 py-2 text-sm font-medium transition-colors"

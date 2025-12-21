@@ -119,6 +119,7 @@ pub async fn get_event_meeting_info(
 }
 
 /// Save Google OAuth credentials to settings
+/// If client_secret is empty and a secret already exists, the existing secret is preserved
 #[tauri::command]
 pub async fn save_google_credentials(
     pool: State<'_, AppPool>,
@@ -129,11 +130,16 @@ pub async fn save_google_credentials(
     let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
     let conn = db_pool.get().map_err(|e| e.to_string())?;
 
-    // Save to settings table
+    // Save client ID
     crate::db::settings::set_setting(&conn, "google_client_id", &client_id)
         .map_err(|e| e.to_string())?;
-    crate::db::settings::set_setting(&conn, "google_client_secret", &client_secret)
-        .map_err(|e| e.to_string())?;
+    
+    // Only update client secret if a new value is provided
+    // This allows updating just the client ID while preserving the existing secret
+    if !client_secret.is_empty() {
+        crate::db::settings::set_setting(&conn, "google_client_secret", &client_secret)
+            .map_err(|e| e.to_string())?;
+    }
 
     Ok(())
 }
