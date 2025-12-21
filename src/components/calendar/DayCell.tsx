@@ -25,7 +25,7 @@ export function DayCell({
   onClick,
   viewType,
 }: DayCellProps) {
-  const { selectEvent } = useCalendarStore();
+  const { selectEvent, openContextMenu } = useCalendarStore();
   
   const dayNumber = date.getDate();
   const maxEventsToShow = viewType === "month" ? 3 : 5;
@@ -87,6 +87,11 @@ export function DayCell({
             onClick={(e) => {
               e.stopPropagation();
               selectEvent(event);
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              openContextMenu(event, { x: e.clientX, y: e.clientY });
             }}
             className="truncate rounded px-1 py-0.5 text-left text-xs transition-colors"
             style={{

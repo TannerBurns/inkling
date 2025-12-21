@@ -1,10 +1,91 @@
 import { useMemo, useEffect, useState } from "react";
-import { FileText, Calendar } from "lucide-react";
+import { FileText, Calendar, Check, X, HelpCircle, CircleDashed, Users } from "lucide-react";
 import { useCalendarStore } from "../../stores/calendarStore";
 import { useDailyNotesStore, formatDateToString } from "../../stores/dailyNotesStore";
 import { getAllDailyNotes } from "../../lib/tauri";
 import type { Note } from "../../types/note";
+import type { CalendarEventWithNote, EventResponseStatus } from "../../types/calendar";
 import { EventCard } from "./EventCard";
+
+/**
+ * Get response status icon for inline display
+ */
+function getStatusIcon(status: EventResponseStatus | null | undefined): React.ReactNode {
+  if (!status) return null;
+  switch (status) {
+    case "accepted": return <Check size={10} className="flex-shrink-0" style={{ color: "#22c55e" }} />;
+    case "declined": return <X size={10} className="flex-shrink-0" style={{ color: "#ef4444" }} />;
+    case "tentative": return <HelpCircle size={10} className="flex-shrink-0" style={{ color: "#f59e0b" }} />;
+    case "needsAction": return <CircleDashed size={10} className="flex-shrink-0" style={{ color: "#6b7280" }} />;
+    default: return null;
+  }
+}
+
+// Colors for different events (to distinguish overlapping events)
+const EVENT_COLORS = [
+  { bg: "var(--color-accent-light)", border: "var(--color-accent)" },
+  { bg: "rgba(34, 197, 94, 0.15)", border: "#22c55e" },
+  { bg: "rgba(249, 115, 22, 0.15)", border: "#f97316" },
+  { bg: "rgba(139, 92, 246, 0.15)", border: "#8b5cf6" },
+  { bg: "rgba(236, 72, 153, 0.15)", border: "#ec4899" },
+  { bg: "rgba(20, 184, 166, 0.15)", border: "#14b8a6" },
+];
+
+/**
+ * Calculate positions for overlapping events
+ */
+function calculateEventPositions(events: CalendarEventWithNote[]): Map<string, { left: number; width: number; colorIndex: number }> {
+  const positions = new Map<string, { left: number; width: number; colorIndex: number }>();
+  
+  // Filter to timed events only and sort by start time
+  const timedEvents = events
+    .filter(e => !e.allDay)
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  
+  if (timedEvents.length === 0) return positions;
+  
+  // Group overlapping events
+  const groups: CalendarEventWithNote[][] = [];
+  let currentGroup: CalendarEventWithNote[] = [];
+  let currentGroupEnd = 0;
+  
+  for (const event of timedEvents) {
+    const startTime = new Date(event.startTime).getTime();
+    const endTime = event.endTime 
+      ? new Date(event.endTime).getTime()
+      : startTime + 60 * 60 * 1000;
+    
+    if (currentGroup.length === 0 || startTime < currentGroupEnd) {
+      // Overlaps with current group
+      currentGroup.push(event);
+      currentGroupEnd = Math.max(currentGroupEnd, endTime);
+    } else {
+      // Start new group
+      if (currentGroup.length > 0) {
+        groups.push(currentGroup);
+      }
+      currentGroup = [event];
+      currentGroupEnd = endTime;
+    }
+  }
+  if (currentGroup.length > 0) {
+    groups.push(currentGroup);
+  }
+  
+  // Assign positions within each group
+  for (const group of groups) {
+    const count = group.length;
+    group.forEach((event, index) => {
+      positions.set(event.id, {
+        left: (index / count) * 100,
+        width: 100 / count,
+        colorIndex: index % EVENT_COLORS.length,
+      });
+    });
+  }
+  
+  return positions;
+}
 
 /**
  * Generate time slots for a day (hourly from 12am to 11pm)
@@ -20,7 +101,7 @@ function generateTimeSlots(): string[] {
 }
 
 export function DayView() {
-  const { currentDate, getEventsForDate } = useCalendarStore();
+  const { currentDate, getEventsForDate, selectEvent, openContextMenu } = useCalendarStore();
   const { openDailyNote } = useDailyNotesStore();
   
   const [dailyNote, setDailyNote] = useState<Note | null>(null);
@@ -57,9 +138,22 @@ export function DayView() {
     openDailyNote(dateStr);
   };
   
+  // Update current time for the indicator every minute
+  const [currentTime, setCurrentTime] = useState(new Date());
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
+  
   // Separate all-day events from timed events
   const allDayEvents = events.filter((e) => e.allDay);
   const timedEvents = events.filter((e) => !e.allDay);
+  
+  // Calculate positions for overlapping events
+  const eventPositions = useMemo(() => calculateEventPositions(events), [events]);
   
   return (
     <div className="flex h-full overflow-hidden">
@@ -140,9 +234,57 @@ export function DayView() {
               All-Day Events
             </h2>
             <div className="space-y-2">
-              {allDayEvents.map((event) => (
-                <EventCard key={event.id} event={event} compact />
-              ))}
+              {allDayEvents.map((event) => {
+                const isGoogleEvent = event.source === "google";
+                const bgColor = isGoogleEvent
+                  ? "rgba(66, 133, 244, 0.15)"
+                  : "var(--color-accent-light)";
+                const borderColor = isGoogleEvent
+                  ? "#4285f4"
+                  : "var(--color-accent)";
+                const textColor = isGoogleEvent
+                  ? "#1a73e8"
+                  : "var(--color-accent)";
+                
+                return (
+                  <button
+                    key={event.id}
+                    onClick={() => selectEvent(event)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      openContextMenu(event, { x: e.clientX, y: e.clientY });
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-opacity hover:opacity-80"
+                    style={{
+                      backgroundColor: bgColor,
+                      borderLeft: `4px solid ${borderColor}`,
+                    }}
+                    title={`${event.title}${event.attendees?.length ? ` • ${event.attendees.length} attendee${event.attendees.length > 1 ? "s" : ""}` : ""}`}
+                  >
+                    <span
+                      className="flex-1 truncate text-sm font-medium"
+                      style={{ color: textColor }}
+                    >
+                      {event.title}
+                    </span>
+                    {event.attendees && event.attendees.length > 0 && (
+                      <span className="flex items-center gap-0.5 flex-shrink-0" style={{ color: "inherit", opacity: 0.7 }}>
+                        <Users size={12} />
+                        <span className="text-xs">{event.attendees.length}</span>
+                      </span>
+                    )}
+                    {getStatusIcon(event.responseStatus)}
+                    {event.endTime && new Date(event.endTime).toDateString() !== new Date(event.startTime).toDateString() && (
+                      <span
+                        className="text-xs"
+                        style={{ color: "var(--color-text-tertiary)" }}
+                      >
+                        Multi-day
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -194,6 +336,16 @@ export function DayView() {
           
           {/* Schedule column */}
           <div className="relative flex-1 border-l" style={{ borderColor: "var(--color-border)" }}>
+            {/* Out of Office background overlay */}
+            {events.some((e) => e.eventType === "outOfOffice") && (
+              <div
+                className="pointer-events-none absolute inset-0 z-0"
+                style={{
+                  backgroundColor: "rgba(66, 133, 244, 0.08)",
+                }}
+              />
+            )}
+            
             {/* Hour lines */}
             {timeSlots.map((_, hourIndex) => (
               <div
@@ -206,18 +358,18 @@ export function DayView() {
             {/* Current time indicator */}
             {formatDateToString(new Date()) === dateStr && (
               <div
-                className="absolute left-0 right-0 z-10 flex items-center"
+                className="absolute left-0 right-0 z-20 flex items-center pointer-events-none"
                 style={{
-                  top: `${(new Date().getHours() + new Date().getMinutes() / 60) * 64}px`,
+                  top: `${(currentTime.getHours() + currentTime.getMinutes() / 60) * 64}px`,
                 }}
               >
                 <div
                   className="h-3 w-3 rounded-full"
-                  style={{ backgroundColor: "var(--color-error, #ef4444)" }}
+                  style={{ backgroundColor: "#ef4444" }}
                 />
                 <div
                   className="h-0.5 flex-1"
-                  style={{ backgroundColor: "var(--color-error, #ef4444)" }}
+                  style={{ backgroundColor: "#ef4444" }}
                 />
               </div>
             )}
@@ -236,22 +388,40 @@ export function DayView() {
               const top = startHour * 64; // 64px per hour (h-16)
               const height = duration * 64;
               
+              // Get position for overlapping events
+              const position = eventPositions.get(event.id) || { left: 0, width: 100, colorIndex: 0 };
+              const colors = EVENT_COLORS[position.colorIndex];
+              
               return (
-                <div
+                <button
                   key={event.id}
-                  className="absolute left-1 right-4 overflow-hidden rounded-lg px-3 py-2"
+                  onClick={() => selectEvent(event)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    openContextMenu(event, { x: e.clientX, y: e.clientY });
+                  }}
+                  className="absolute overflow-hidden rounded-lg px-3 py-2 text-left transition-opacity hover:opacity-80"
                   style={{
                     top: `${top}px`,
                     height: `${Math.max(height, 32)}px`,
-                    backgroundColor: "var(--color-accent-light)",
-                    borderLeft: "4px solid var(--color-accent)",
+                    left: `calc(${position.left}% + 4px)`,
+                    width: `calc(${position.width}% - 16px)`,
+                    backgroundColor: colors.bg,
+                    borderLeft: `4px solid ${colors.border}`,
                   }}
                 >
                   <div
-                    className="truncate font-medium"
+                    className="flex items-center gap-1 truncate font-medium"
                     style={{ color: "var(--color-text-primary)" }}
                   >
-                    {event.title}
+                    <span className="truncate">{event.title}</span>
+                    {event.attendees && event.attendees.length > 0 && (
+                      <span className="flex items-center gap-0.5 flex-shrink-0" style={{ color: "var(--color-text-tertiary)" }}>
+                        <Users size={11} />
+                        <span className="text-[10px]">{event.attendees.length}</span>
+                      </span>
+                    )}
+                    {getStatusIcon(event.responseStatus)}
                   </div>
                   {height > 50 && (
                     <>
@@ -262,7 +432,17 @@ export function DayView() {
                         {startTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} - 
                         {endTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                       </div>
-                      {event.description && height > 80 && (
+                      {/* Attendees list for taller events */}
+                      {event.attendees && event.attendees.length > 0 && height > 80 && (
+                        <div
+                          className="mt-1 truncate text-xs"
+                          style={{ color: "var(--color-text-secondary)" }}
+                        >
+                          {event.attendees.slice(0, 3).map(a => a.name || a.email.split("@")[0]).join(", ")}
+                          {event.attendees.length > 3 && ` +${event.attendees.length - 3}`}
+                        </div>
+                      )}
+                      {event.description && height > 100 && !event.attendees?.length && (
                         <p
                           className="mt-1 truncate text-xs"
                           style={{ color: "var(--color-text-tertiary)" }}
@@ -272,7 +452,7 @@ export function DayView() {
                       )}
                     </>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>

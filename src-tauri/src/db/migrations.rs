@@ -27,6 +27,10 @@ pub fn run_migrations(conn: &Connection) -> Result<(), MigrationError> {
         ("005_conversations", MIGRATION_005_CONVERSATIONS),
         ("006_boards", MIGRATION_006_BOARDS),
         ("007_calendar_events", MIGRATION_007_CALENDAR_EVENTS),
+        ("008_google_accounts", MIGRATION_008_GOOGLE_ACCOUNTS),
+        ("009_calendar_event_type", MIGRATION_009_CALENDAR_EVENT_TYPE),
+        ("010_calendar_response_status", MIGRATION_010_CALENDAR_RESPONSE_STATUS),
+        ("011_calendar_attendees", MIGRATION_011_CALENDAR_ATTENDEES),
     ];
 
     for (name, sql) in migrations {
@@ -235,6 +239,40 @@ CREATE INDEX idx_calendar_events_source ON calendar_events(source);
 CREATE INDEX idx_calendar_events_external_id ON calendar_events(external_id);
 CREATE INDEX idx_calendar_events_linked_note ON calendar_events(linked_note_id);
 CREATE INDEX idx_calendar_events_date_range ON calendar_events(start_time, end_time);
+"#;
+
+const MIGRATION_008_GOOGLE_ACCOUNTS: &str = r#"
+-- Google OAuth account storage
+CREATE TABLE google_accounts (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    email TEXT NOT NULL,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    token_expires_at INTEGER,
+    connected_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+"#;
+
+const MIGRATION_009_CALENDAR_EVENT_TYPE: &str = r#"
+-- Add event_type column to calendar_events
+-- Types: default, outOfOffice, focusTime, workingLocation
+ALTER TABLE calendar_events ADD COLUMN event_type TEXT NOT NULL DEFAULT 'default';
+"#;
+
+const MIGRATION_010_CALENDAR_RESPONSE_STATUS: &str = r#"
+-- Add response_status column to calendar_events
+-- Values: needsAction, declined, tentative, accepted
+-- NULL means no response tracking (e.g., for manual events or events you organized)
+ALTER TABLE calendar_events ADD COLUMN response_status TEXT DEFAULT NULL;
+"#;
+
+const MIGRATION_011_CALENDAR_ATTENDEES: &str = r#"
+-- Add attendees column to store event attendees as JSON array
+-- Format: [{"email": "...", "name": "...", "responseStatus": "...", "isOrganizer": bool}]
+ALTER TABLE calendar_events ADD COLUMN attendees TEXT DEFAULT NULL;
+
+-- Add meeting_link column to store video call links
+ALTER TABLE calendar_events ADD COLUMN meeting_link TEXT DEFAULT NULL;
 "#;
 
 #[cfg(test)]

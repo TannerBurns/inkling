@@ -1,10 +1,91 @@
 import { useMemo, useEffect, useState } from "react";
+import { Check, X, HelpCircle, CircleDashed, Users } from "lucide-react";
 import { useCalendarStore } from "../../stores/calendarStore";
 import { useDailyNotesStore, formatDateToString } from "../../stores/dailyNotesStore";
 import { getAllDailyNotes } from "../../lib/tauri";
-import type { CalendarEventWithNote } from "../../types/calendar";
+import type { CalendarEventWithNote, EventResponseStatus } from "../../types/calendar";
 
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/**
+ * Get response status icon for inline display
+ */
+function getStatusIcon(status: EventResponseStatus | null | undefined): React.ReactNode {
+  if (!status) return null;
+  switch (status) {
+    case "accepted": return <Check size={10} className="flex-shrink-0" style={{ color: "#22c55e" }} />;
+    case "declined": return <X size={10} className="flex-shrink-0" style={{ color: "#ef4444" }} />;
+    case "tentative": return <HelpCircle size={10} className="flex-shrink-0" style={{ color: "#f59e0b" }} />;
+    case "needsAction": return <CircleDashed size={10} className="flex-shrink-0" style={{ color: "#6b7280" }} />;
+    default: return null;
+  }
+}
+
+// Colors for different events (to distinguish overlapping events)
+const EVENT_COLORS = [
+  { bg: "var(--color-accent-light)", border: "var(--color-accent)" },
+  { bg: "rgba(34, 197, 94, 0.15)", border: "#22c55e" },
+  { bg: "rgba(249, 115, 22, 0.15)", border: "#f97316" },
+  { bg: "rgba(139, 92, 246, 0.15)", border: "#8b5cf6" },
+  { bg: "rgba(236, 72, 153, 0.15)", border: "#ec4899" },
+  { bg: "rgba(20, 184, 166, 0.15)", border: "#14b8a6" },
+];
+
+/**
+ * Calculate positions for overlapping events
+ */
+function calculateEventPositions(events: CalendarEventWithNote[]): Map<string, { left: number; width: number; colorIndex: number }> {
+  const positions = new Map<string, { left: number; width: number; colorIndex: number }>();
+  
+  // Filter to timed events only and sort by start time
+  const timedEvents = events
+    .filter(e => !e.allDay)
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  
+  if (timedEvents.length === 0) return positions;
+  
+  // Group overlapping events
+  const groups: CalendarEventWithNote[][] = [];
+  let currentGroup: CalendarEventWithNote[] = [];
+  let currentGroupEnd = 0;
+  
+  for (const event of timedEvents) {
+    const startTime = new Date(event.startTime).getTime();
+    const endTime = event.endTime 
+      ? new Date(event.endTime).getTime()
+      : startTime + 60 * 60 * 1000;
+    
+    if (currentGroup.length === 0 || startTime < currentGroupEnd) {
+      // Overlaps with current group
+      currentGroup.push(event);
+      currentGroupEnd = Math.max(currentGroupEnd, endTime);
+    } else {
+      // Start new group
+      if (currentGroup.length > 0) {
+        groups.push(currentGroup);
+      }
+      currentGroup = [event];
+      currentGroupEnd = endTime;
+    }
+  }
+  if (currentGroup.length > 0) {
+    groups.push(currentGroup);
+  }
+  
+  // Assign positions within each group
+  for (const group of groups) {
+    const count = group.length;
+    group.forEach((event, index) => {
+      positions.set(event.id, {
+        left: (index / count) * 100,
+        width: 100 / count,
+        colorIndex: index % EVENT_COLORS.length,
+      });
+    });
+  }
+  
+  return positions;
+}
 
 /**
  * Generate the 7 days of the week containing the given date
@@ -37,7 +118,7 @@ function generateTimeSlots(): string[] {
 }
 
 export function WeekView() {
-  const { currentDate, getEventsForDate, selectEvent } = useCalendarStore();
+  const { currentDate, getEventsForDate, selectEvent, openContextMenu } = useCalendarStore();
   const { openDailyNote } = useDailyNotesStore();
   
   // Track which dates have daily notes
@@ -65,25 +146,91 @@ export function WeekView() {
   const days = useMemo(() => generateWeekDays(currentDate), [currentDate]);
   const timeSlots = useMemo(() => generateTimeSlots(), []);
   
-  // Collect all-day events for each day
-  const allDayEventsByDay = useMemo(() => {
-    const result: Map<string, CalendarEventWithNote[]> = new Map();
+  // Collect all-day events and calculate their spans
+  const { allDayEventRows, hasAnyAllDayEvents } = useMemo(() => {
+    // Get unique all-day events for this week
+    const seenEventIds = new Set<string>();
+    const allDayEvents: CalendarEventWithNote[] = [];
+    
     days.forEach((day) => {
-      const dateStr = formatDateToString(day);
       const dayEvents = getEventsForDate(day);
-      const allDayEvents = dayEvents.filter((e) => e.allDay);
-      if (allDayEvents.length > 0) {
-        result.set(dateStr, allDayEvents);
-      }
+      dayEvents
+        .filter((e) => e.allDay && !seenEventIds.has(e.id))
+        .forEach((event) => {
+          seenEventIds.add(event.id);
+          allDayEvents.push(event);
+        });
     });
-    return result;
+    
+    if (allDayEvents.length === 0) {
+      return { allDayEventRows: [], hasAnyAllDayEvents: false };
+    }
+    
+    // Calculate span for each event (which day columns it covers)
+    const weekStart = days[0];
+    const weekEnd = days[6];
+    
+    const eventSpans = allDayEvents.map((event) => {
+      const eventStart = new Date(event.startTime);
+      const eventEnd = event.endTime ? new Date(event.endTime) : eventStart;
+      
+      // Clamp to week bounds
+      const displayStart = eventStart < weekStart ? weekStart : eventStart;
+      const displayEnd = eventEnd > weekEnd ? weekEnd : eventEnd;
+      
+      // Find column indices
+      const startCol = days.findIndex((d) => formatDateToString(d) === formatDateToString(displayStart));
+      const endCol = days.findIndex((d) => formatDateToString(d) === formatDateToString(displayEnd));
+      
+      return {
+        event,
+        startCol: Math.max(0, startCol),
+        endCol: Math.min(6, endCol >= 0 ? endCol : startCol),
+        span: Math.max(1, (endCol >= 0 ? endCol : startCol) - Math.max(0, startCol) + 1),
+      };
+    });
+    
+    // Sort by start column, then by span (longer events first)
+    eventSpans.sort((a, b) => {
+      if (a.startCol !== b.startCol) return a.startCol - b.startCol;
+      return b.span - a.span;
+    });
+    
+    // Arrange events into rows to avoid overlap
+    const rows: Array<typeof eventSpans> = [];
+    
+    for (const eventSpan of eventSpans) {
+      // Find a row where this event fits
+      let placed = false;
+      for (const row of rows) {
+        const overlaps = row.some((existing) => {
+          return !(eventSpan.endCol < existing.startCol || eventSpan.startCol > existing.endCol);
+        });
+        if (!overlaps) {
+          row.push(eventSpan);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        rows.push([eventSpan]);
+      }
+    }
+    
+    return { allDayEventRows: rows, hasAnyAllDayEvents: true };
   }, [days, getEventsForDate]);
   
-  // Check if we have any all-day events this week
-  const hasAnyAllDayEvents = allDayEventsByDay.size > 0;
+  const todayStr = formatDateToString(new Date());
   
-  const today = new Date();
-  const todayStr = formatDateToString(today);
+  // Update current time for the indicator every minute
+  const [currentTime, setCurrentTime] = useState(new Date());
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
   
   const handleDayClick = (date: Date) => {
     const dateStr = formatDateToString(date);
@@ -162,49 +309,74 @@ export function WeekView() {
       
       {/* All-day events section */}
       {hasAnyAllDayEvents && (
-        <div className="flex flex-shrink-0 border-b" style={{ borderColor: "var(--color-border)" }}>
-          {/* Time column with label */}
-          <div
-            className="flex w-16 flex-shrink-0 items-center justify-center px-1"
-            style={{ color: "var(--color-text-tertiary)" }}
-          >
-            <span className="text-xs">All-day</span>
-          </div>
-          
-          {/* All-day events for each day */}
-          {days.map((day, index) => {
-            const dateStr = formatDateToString(day);
-            const allDayEvents = allDayEventsByDay.get(dateStr) || [];
-            
-            return (
+        <div className="flex flex-shrink-0 flex-col border-b" style={{ borderColor: "var(--color-border)" }}>
+          {allDayEventRows.map((row, rowIndex) => (
+            <div key={rowIndex} className="relative flex h-7">
+              {/* Time column spacer (only show label on first row) */}
               <div
-                key={index}
-                className="flex min-h-[36px] flex-1 flex-col gap-1 border-l p-1"
-                style={{ borderColor: "var(--color-border)" }}
+                className="flex w-16 flex-shrink-0 items-center justify-center px-1"
+                style={{ color: "var(--color-text-tertiary)" }}
               >
-                {allDayEvents.map((event) => (
-                  <button
-                    key={event.id}
-                    onClick={() => selectEvent(event)}
-                    className="truncate rounded px-2 py-0.5 text-left text-xs font-medium transition-opacity"
-                    style={{
-                      backgroundColor: "var(--color-accent)",
-                      color: "white",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.opacity = "0.8";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.opacity = "1";
-                    }}
-                    title={event.title}
-                  >
-                    {event.title}
-                  </button>
-                ))}
+                {rowIndex === 0 && <span className="text-xs">All-day</span>}
               </div>
-            );
-          })}
+              
+              {/* Grid for positioning events */}
+              <div className="relative flex flex-1">
+                {/* Column dividers */}
+                {days.map((_, colIndex) => (
+                  <div
+                    key={colIndex}
+                    className="flex-1 border-l"
+                    style={{ borderColor: "var(--color-border)" }}
+                  />
+                ))}
+                
+                {/* Events positioned absolutely */}
+                {row.map(({ event, startCol, span }) => {
+                  // Calculate color based on event source
+                  const isGoogleEvent = event.source === "google";
+                  const bgColor = isGoogleEvent
+                    ? "rgba(66, 133, 244, 0.15)"
+                    : "rgba(var(--color-accent-rgb, 59, 130, 246), 0.15)";
+                  const borderColor = isGoogleEvent
+                    ? "#4285f4"
+                    : "var(--color-accent)";
+                  const textColor = isGoogleEvent
+                    ? "#1a73e8"
+                    : "var(--color-accent)";
+                  
+                  return (
+                    <button
+                      key={event.id}
+                      onClick={() => selectEvent(event)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        openContextMenu(event, { x: e.clientX, y: e.clientY });
+                      }}
+                      className="absolute top-0.5 bottom-0.5 flex items-center gap-1 truncate rounded px-2 text-left text-xs font-medium transition-opacity hover:opacity-80"
+                      style={{
+                        left: `calc(${(startCol / 7) * 100}% + 2px)`,
+                        width: `calc(${(span / 7) * 100}% - 4px)`,
+                        backgroundColor: bgColor,
+                        borderLeft: `3px solid ${borderColor}`,
+                        color: textColor,
+                      }}
+                      title={`${event.title}${event.attendees?.length ? ` • ${event.attendees.length} attendee${event.attendees.length > 1 ? "s" : ""}` : ""}`}
+                    >
+                      <span className="truncate">{event.title}</span>
+                      {event.attendees && event.attendees.length > 0 && (
+                        <span className="flex items-center gap-0.5 flex-shrink-0" style={{ color: "inherit", opacity: 0.7 }}>
+                          <Users size={10} />
+                          <span className="text-[9px]">{event.attendees.length}</span>
+                        </span>
+                      )}
+                      {getStatusIcon(event.responseStatus)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
       
@@ -231,6 +403,11 @@ export function WeekView() {
           {/* Day columns with events */}
           {days.map((day, dayIndex) => {
             const dayEvents = getEventsForDate(day);
+            const dateStr = formatDateToString(day);
+            const isToday = dateStr === todayStr;
+            const eventPositions = calculateEventPositions(dayEvents);
+            // Check for out-of-office events (these get a background overlay)
+            const hasOutOfOfficeEvent = dayEvents.some((e) => e.eventType === "outOfOffice");
             
             return (
               <div
@@ -238,6 +415,16 @@ export function WeekView() {
                 className="relative flex-1 border-l"
                 style={{ borderColor: "var(--color-border)" }}
               >
+                {/* Out of Office background overlay */}
+                {hasOutOfOfficeEvent && (
+                  <div
+                    className="pointer-events-none absolute inset-0 z-0"
+                    style={{
+                      backgroundColor: "rgba(66, 133, 244, 0.08)",
+                    }}
+                  />
+                )}
+                
                 {/* Hour lines */}
                 {timeSlots.map((_, hourIndex) => (
                   <div
@@ -246,6 +433,25 @@ export function WeekView() {
                     style={{ borderColor: "var(--color-border)" }}
                   />
                 ))}
+                
+                {/* Current time indicator (only for today's column) */}
+                {isToday && (
+                  <div
+                    className="absolute left-0 right-0 z-20 flex items-center pointer-events-none"
+                    style={{
+                      top: `${(currentTime.getHours() + currentTime.getMinutes() / 60) * 48}px`,
+                    }}
+                  >
+                    <div
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: "#ef4444" }}
+                    />
+                    <div
+                      className="h-0.5 flex-1"
+                      style={{ backgroundColor: "#ef4444" }}
+                    />
+                  </div>
+                )}
                 
                 {/* Events positioned by time */}
                 {dayEvents.map((event) => {
@@ -265,20 +471,40 @@ export function WeekView() {
                     return null; // All-day events shown in header
                   }
                   
+                  // Get position for overlapping events
+                  const position = eventPositions.get(event.id) || { left: 0, width: 100, colorIndex: 0 };
+                  const colors = EVENT_COLORS[position.colorIndex];
+                  
                   return (
-                    <div
+                    <button
                       key={event.id}
-                      className="absolute left-0.5 right-0.5 overflow-hidden rounded px-1 py-0.5 text-xs"
+                      onClick={() => selectEvent(event)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        openContextMenu(event, { x: e.clientX, y: e.clientY });
+                      }}
+                      className="absolute overflow-hidden rounded px-1 py-0.5 text-xs text-left transition-opacity hover:opacity-80"
                       style={{
                         top: `${top}px`,
                         height: `${Math.max(height, 20)}px`,
-                        backgroundColor: "var(--color-accent-light)",
-                        borderLeft: "3px solid var(--color-accent)",
+                        left: `calc(${position.left}% + 2px)`,
+                        width: `calc(${position.width}% - 4px)`,
+                        backgroundColor: colors.bg,
+                        borderLeft: `3px solid ${colors.border}`,
                         color: "var(--color-text-primary)",
                       }}
-                      title={event.title}
+                      title={`${event.title}${event.attendees?.length ? ` • ${event.attendees.length} attendee${event.attendees.length > 1 ? "s" : ""}` : ""}`}
                     >
-                      <div className="truncate font-medium">{event.title}</div>
+                      <div className="flex items-center gap-1 truncate font-medium">
+                        <span className="truncate">{event.title}</span>
+                        {event.attendees && event.attendees.length > 0 && (
+                          <span className="flex items-center gap-0.5 flex-shrink-0" style={{ color: "var(--color-text-tertiary)" }}>
+                            <Users size={10} />
+                            <span className="text-[9px]">{event.attendees.length}</span>
+                          </span>
+                        )}
+                        {getStatusIcon(event.responseStatus)}
+                      </div>
                       {height > 30 && (
                         <div
                           className="truncate"
@@ -287,7 +513,7 @@ export function WeekView() {
                           {startTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                         </div>
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>

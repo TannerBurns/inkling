@@ -6,7 +6,7 @@ import * as aiLib from "../lib/ai";
 export type Theme = "system" | "light" | "dark";
 
 /** Settings tab in the modal */
-export type SettingsTab = "appearance" | "ai-providers" | "agents" | "assistant" | "tags" | "daily-notes" | "data" | "about";
+export type SettingsTab = "appearance" | "ai-providers" | "agents" | "assistant" | "tags" | "daily-notes" | "google" | "data" | "about";
 
 /** Agent settings */
 export interface AgentSettings {

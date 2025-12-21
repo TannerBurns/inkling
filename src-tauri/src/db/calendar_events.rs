@@ -4,8 +4,8 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::models::{
-    CalendarEvent, CalendarEventSource, CalendarEventWithNote, CreateCalendarEventInput,
-    UpdateCalendarEventInput,
+    CalendarEvent, CalendarEventSource, CalendarEventType, CalendarEventWithNote, CreateCalendarEventInput,
+    EventAttendee, EventResponseStatus, UpdateCalendarEventInput,
 };
 
 #[derive(Error, Debug)]
@@ -40,10 +40,21 @@ fn row_to_event(row: &Row) -> Result<CalendarEvent, rusqlite::Error> {
     let start_time_str: String = row.get(3)?;
     let end_time_str: Option<String> = row.get(4)?;
     let source_str: String = row.get(7)?;
-    let created_at_str: String = row.get(10)?;
-    let updated_at_str: String = row.get(11)?;
+    let event_type_str: String = row.get(10)?;
+    let response_status_str: Option<String> = row.get(11)?;
+    let attendees_json: Option<String> = row.get(12)?;
+    let meeting_link: Option<String> = row.get(13)?;
+    let created_at_str: String = row.get(14)?;
+    let updated_at_str: String = row.get(15)?;
 
     let source = CalendarEventSource::from_str(&source_str).unwrap_or(CalendarEventSource::Manual);
+    let event_type = CalendarEventType::from_str(&event_type_str);
+    let response_status = response_status_str.map(|s| EventResponseStatus::from_str(&s));
+    
+    // Parse attendees from JSON
+    let attendees: Option<Vec<EventAttendee>> = attendees_json.and_then(|json| {
+        serde_json::from_str(&json).ok()
+    });
 
     Ok(CalendarEvent {
         id: row.get(0)?,
@@ -56,6 +67,10 @@ fn row_to_event(row: &Row) -> Result<CalendarEvent, rusqlite::Error> {
         source,
         external_id: row.get(8)?,
         linked_note_id: row.get(9)?,
+        event_type,
+        response_status,
+        attendees,
+        meeting_link,
         created_at: parse_datetime(&created_at_str),
         updated_at: parse_datetime(&updated_at_str),
     })
@@ -64,7 +79,7 @@ fn row_to_event(row: &Row) -> Result<CalendarEvent, rusqlite::Error> {
 /// Map a database row to a CalendarEventWithNote struct
 fn row_to_event_with_note(row: &Row) -> Result<CalendarEventWithNote, rusqlite::Error> {
     let event = row_to_event(row)?;
-    let linked_note_title: Option<String> = row.get(12)?;
+    let linked_note_title: Option<String> = row.get(16)?;
 
     Ok(CalendarEventWithNote {
         event,
@@ -83,10 +98,15 @@ pub fn create_event(
     let end_time = input
         .end_time
         .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string());
+    
+    // Convert new fields to their storage format
+    let event_type_str = input.event_type.unwrap_or(CalendarEventType::Default).as_str();
+    let response_status_str = input.response_status.as_ref().map(|s| s.as_str());
+    let attendees_json = input.attendees.as_ref().and_then(|a| serde_json::to_string(a).ok());
 
     conn.execute(
-        "INSERT INTO calendar_events (id, title, description, start_time, end_time, all_day, recurrence_rule, source, linked_note_id, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'manual', ?8, ?9, ?10)",
+        "INSERT INTO calendar_events (id, title, description, start_time, end_time, all_day, recurrence_rule, source, linked_note_id, event_type, response_status, attendees, meeting_link, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'manual', ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             id,
             input.title,
@@ -96,6 +116,10 @@ pub fn create_event(
             input.all_day,
             input.recurrence_rule,
             input.linked_note_id,
+            event_type_str,
+            response_status_str,
+            attendees_json,
+            input.meeting_link,
             now,
             now,
         ],
@@ -107,7 +131,7 @@ pub fn create_event(
 /// Get a calendar event by ID
 pub fn get_event(conn: &Connection, id: &str) -> Result<Option<CalendarEvent>, CalendarEventDbError> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, description, start_time, end_time, all_day, recurrence_rule, source, external_id, linked_note_id, created_at, updated_at
+        "SELECT id, title, description, start_time, end_time, all_day, recurrence_rule, source, external_id, linked_note_id, event_type, response_status, attendees, meeting_link, created_at, updated_at
          FROM calendar_events WHERE id = ?1",
     )?;
 
@@ -121,7 +145,7 @@ pub fn get_event_with_note(
     id: &str,
 ) -> Result<Option<CalendarEventWithNote>, CalendarEventDbError> {
     let mut stmt = conn.prepare(
-        "SELECT e.id, e.title, e.description, e.start_time, e.end_time, e.all_day, e.recurrence_rule, e.source, e.external_id, e.linked_note_id, e.created_at, e.updated_at, n.title as note_title
+        "SELECT e.id, e.title, e.description, e.start_time, e.end_time, e.all_day, e.recurrence_rule, e.source, e.external_id, e.linked_note_id, e.event_type, e.response_status, e.attendees, e.meeting_link, e.created_at, e.updated_at, n.title as note_title
          FROM calendar_events e
          LEFT JOIN notes n ON e.linked_note_id = n.id
          WHERE e.id = ?1",
@@ -134,7 +158,7 @@ pub fn get_event_with_note(
 /// Get all calendar events
 pub fn get_all_events(conn: &Connection) -> Result<Vec<CalendarEvent>, CalendarEventDbError> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, description, start_time, end_time, all_day, recurrence_rule, source, external_id, linked_note_id, created_at, updated_at
+        "SELECT id, title, description, start_time, end_time, all_day, recurrence_rule, source, external_id, linked_note_id, event_type, response_status, attendees, meeting_link, created_at, updated_at
          FROM calendar_events ORDER BY start_time ASC",
     )?;
 
@@ -156,7 +180,7 @@ pub fn get_events_in_range(
     let end_str = end.format("%Y-%m-%d %H:%M:%S").to_string();
 
     let mut stmt = conn.prepare(
-        "SELECT e.id, e.title, e.description, e.start_time, e.end_time, e.all_day, e.recurrence_rule, e.source, e.external_id, e.linked_note_id, e.created_at, e.updated_at, n.title as note_title
+        "SELECT e.id, e.title, e.description, e.start_time, e.end_time, e.all_day, e.recurrence_rule, e.source, e.external_id, e.linked_note_id, e.event_type, e.response_status, e.attendees, e.meeting_link, e.created_at, e.updated_at, n.title as note_title
          FROM calendar_events e
          LEFT JOIN notes n ON e.linked_note_id = n.id
          WHERE e.start_time >= ?1 AND e.start_time < ?2
@@ -180,7 +204,7 @@ pub fn get_events_for_date(
     let end_str = format!("{} 23:59:59", date);
 
     let mut stmt = conn.prepare(
-        "SELECT e.id, e.title, e.description, e.start_time, e.end_time, e.all_day, e.recurrence_rule, e.source, e.external_id, e.linked_note_id, e.created_at, e.updated_at, n.title as note_title
+        "SELECT e.id, e.title, e.description, e.start_time, e.end_time, e.all_day, e.recurrence_rule, e.source, e.external_id, e.linked_note_id, e.event_type, e.response_status, e.attendees, e.meeting_link, e.created_at, e.updated_at, n.title as note_title
          FROM calendar_events e
          LEFT JOIN notes n ON e.linked_note_id = n.id
          WHERE (e.start_time >= ?1 AND e.start_time <= ?2)
@@ -213,13 +237,20 @@ pub fn update_event(
     let all_day = input.all_day.unwrap_or(existing.all_day);
     let recurrence_rule = input.recurrence_rule.or(existing.recurrence_rule);
     let linked_note_id = input.linked_note_id.or(existing.linked_note_id);
+    let event_type = input.event_type.unwrap_or(existing.event_type);
+    let response_status = input.response_status.or(existing.response_status);
+    let attendees = input.attendees.or(existing.attendees);
+    let meeting_link = input.meeting_link.or(existing.meeting_link);
 
     let start_time_str = start_time.format("%Y-%m-%d %H:%M:%S").to_string();
     let end_time_str = end_time.map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string());
+    let event_type_str = event_type.as_str();
+    let response_status_str = response_status.as_ref().map(|s| s.as_str());
+    let attendees_json = attendees.as_ref().and_then(|a| serde_json::to_string(a).ok());
 
     conn.execute(
-        "UPDATE calendar_events SET title = ?1, description = ?2, start_time = ?3, end_time = ?4, all_day = ?5, recurrence_rule = ?6, linked_note_id = ?7, updated_at = ?8
-         WHERE id = ?9",
+        "UPDATE calendar_events SET title = ?1, description = ?2, start_time = ?3, end_time = ?4, all_day = ?5, recurrence_rule = ?6, linked_note_id = ?7, event_type = ?8, response_status = ?9, attendees = ?10, meeting_link = ?11, updated_at = ?12
+         WHERE id = ?13",
         params![
             title,
             description,
@@ -228,6 +259,10 @@ pub fn update_event(
             all_day,
             recurrence_rule,
             linked_note_id,
+            event_type_str,
+            response_status_str,
+            attendees_json,
+            meeting_link,
             now,
             id
         ],
@@ -291,6 +326,10 @@ mod tests {
             all_day: false,
             recurrence_rule: None,
             linked_note_id: None,
+            event_type: None,
+            response_status: None,
+            attendees: None,
+            meeting_link: None,
         };
 
         let event = create_event(&conn, input).unwrap();
@@ -315,6 +354,10 @@ mod tests {
             all_day: false,
             recurrence_rule: None,
             linked_note_id: None,
+            event_type: None,
+            response_status: None,
+            attendees: None,
+            meeting_link: None,
         };
 
         let event = create_event(&conn, input).unwrap();
@@ -327,6 +370,10 @@ mod tests {
             all_day: Some(true),
             recurrence_rule: None,
             linked_note_id: None,
+            event_type: None,
+            response_status: None,
+            attendees: None,
+            meeting_link: None,
         };
 
         let updated = update_event(&conn, &event.id, update).unwrap();
@@ -348,6 +395,10 @@ mod tests {
             all_day: false,
             recurrence_rule: None,
             linked_note_id: None,
+            event_type: None,
+            response_status: None,
+            attendees: None,
+            meeting_link: None,
         };
 
         let event = create_event(&conn, input).unwrap();
@@ -375,6 +426,10 @@ mod tests {
                     all_day: false,
                     recurrence_rule: None,
                     linked_note_id: None,
+                    event_type: None,
+                    response_status: None,
+                    attendees: None,
+                    meeting_link: None,
                 },
             )
             .unwrap();

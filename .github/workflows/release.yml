@@ -110,6 +110,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Google Calendar integration
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           # macOS signing
           APPLE_SIGNING_IDENTITY: ${{ secrets.DEVELOPER_ID }}
           APPLE_TEAM_ID: ${{ secrets.TEAM_ID }}

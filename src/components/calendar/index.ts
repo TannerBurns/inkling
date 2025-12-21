@@ -6,4 +6,5 @@ export { DayView } from "./DayView";
 export { DayCell } from "./DayCell";
 export { EventCard } from "./EventCard";
 export { EventModal } from "./EventModal";
+export { EventContextMenu } from "./EventContextMenu";
 
