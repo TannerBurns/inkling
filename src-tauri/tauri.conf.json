@@ -37,7 +37,7 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "signingIdentity": "-"
+      "signingIdentity": null
     },
     "windows": {
       "nsis": {
