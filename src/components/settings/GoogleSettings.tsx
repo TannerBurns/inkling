@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Chrome, Loader2, CheckCircle, XCircle, Calendar, Settings, ExternalLink, Shield } from "lucide-react";
+import { Chrome, Loader2, CheckCircle, XCircle, Calendar, Settings, Shield } from "lucide-react";
 import * as googleApi from "../../lib/google";
 import type { GoogleConnectionStatus } from "../../types/google";
 import type { CredentialSource } from "../../lib/google";
+import { GoogleSetupGuide } from "./GoogleSetupGuide";
 
 /**
  * Google account settings component
@@ -283,28 +284,28 @@ export function GoogleSettings() {
 
       {/* Not configured - show setup options */}
       {!isConfigured && !showCredentialForm && (
-        <div
-          className="rounded-lg border p-4"
-          style={{
-            backgroundColor: "var(--color-bg-secondary)",
-            borderColor: "var(--color-border)",
-          }}
-        >
-          <h4
-            className="mb-2 font-medium"
-            style={{ color: "var(--color-text-primary)" }}
+        <div className="space-y-4">
+          <div
+            className="rounded-lg border p-4"
+            style={{
+              backgroundColor: "var(--color-bg-secondary)",
+              borderColor: "var(--color-border)",
+            }}
           >
-            Set Up Google Calendar Sync
-          </h4>
-          <p
-            className="mb-4 text-sm"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            To sync your Google Calendar, you need to create a free Google Cloud project
-            and enter your credentials below.
-          </p>
-          
-          <div className="flex gap-2">
+            <h4
+              className="mb-2 font-medium"
+              style={{ color: "var(--color-text-primary)" }}
+            >
+              Set Up Google Calendar Sync
+            </h4>
+            <p
+              className="mb-4 text-sm"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              To sync your Google Calendar, you need to create a free Google Cloud project
+              and enter your credentials below. Follow the setup guide for step-by-step instructions.
+            </p>
+            
             <button
               onClick={async () => {
                 // Check if credentials already exist to enable "keep existing" feature
@@ -333,56 +334,39 @@ export function GoogleSettings() {
               <Settings size={16} />
               Configure Credentials
             </button>
-            <a
-              href="https://github.com/TannerBurns/inkling#setting-up-google-calendar-sync"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
-              style={{
-                backgroundColor: "var(--color-bg-tertiary)",
-                color: "var(--color-text-secondary)",
-              }}
-            >
-              <ExternalLink size={16} />
-              Setup Guide
-            </a>
           </div>
+
+          {/* Embedded setup guide */}
+          <GoogleSetupGuide defaultExpanded />
         </div>
       )}
 
       {/* Credential input form */}
       {showCredentialForm && (
-        <div
-          className="rounded-lg border p-4"
-          style={{
-            backgroundColor: "var(--color-bg-secondary)",
-            borderColor: "var(--color-border)",
-          }}
-        >
-          <h4
-            className="mb-3 font-medium"
-            style={{ color: "var(--color-text-primary)" }}
+        <div className="space-y-4">
+          <div
+            className="rounded-lg border p-4"
+            style={{
+              backgroundColor: "var(--color-bg-secondary)",
+              borderColor: "var(--color-border)",
+            }}
           >
-            Enter Google OAuth Credentials
-          </h4>
-          
-          <p
-            className="mb-4 text-sm"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            Follow the{" "}
-            <a
-              href="https://github.com/TannerBurns/inkling#setting-up-google-calendar-sync"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "var(--color-accent)" }}
+            <h4
+              className="mb-3 font-medium"
+              style={{ color: "var(--color-text-primary)" }}
             >
-              setup guide
-            </a>{" "}
-            to get your Client ID and Secret from Google Cloud Console.
-          </p>
-          
-          <div className="space-y-3">
+              Enter Google OAuth Credentials
+            </h4>
+            
+            <p
+              className="mb-4 text-sm"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              Enter your Client ID and Client Secret from Google Cloud Console below.
+              See the setup guide for instructions on how to get these.
+            </p>
+            
+            <div className="space-y-3">
             <div>
               <label
                 className="mb-1 block text-sm font-medium"
@@ -471,6 +455,10 @@ export function GoogleSettings() {
               </button>
             </div>
           </div>
+        </div>
+
+          {/* Embedded setup guide for reference */}
+          <GoogleSetupGuide />
         </div>
       )}
 
