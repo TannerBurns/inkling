@@ -115,15 +115,6 @@ Inkling uses a unified AI gateway to connect to multiple providers seamlessly.
 | **Ollama** | `ollama serve` | Easy setup, many models available |
 | **LMStudio** | GUI application | User-friendly, built-in model browser |
 | **VLLM** | Docker/Python | Production-ready, high throughput |
-| **llama.cpp** | Direct binary | Maximum control, minimal overhead |
-
-### Recommended Local Models
-
-| Use Case | Model | Notes |
-|----------|-------|-------|
-| **Chat** | Llama 3 8B | Good balance of quality and speed |
-| **Embeddings** | nomic-embed-text | Excellent for semantic search |
-| **Fast tasks** | Phi-3 Mini | Quick responses, smaller footprint |
 
 ---
 
@@ -200,55 +191,6 @@ npm run build:mac     # macOS Universal
 npm run build:win     # Windows x64
 npm run build:linux   # Linux x64
 ```
-
-### Project Structure
-
-```
-inkling/
-├── src/                    # React frontend
-│   ├── components/         # UI components
-│   │   ├── editor/         # TipTap editor
-│   │   ├── chat/           # Chat interface
-│   │   ├── notes/          # Note management
-│   │   ├── search/         # Search UI
-│   │   └── settings/       # Settings modal
-│   ├── hooks/              # React hooks
-│   ├── stores/             # Zustand stores
-│   └── lib/                # Utilities
-├── src-tauri/              # Rust backend
-│   └── src/
-│       ├── ai/             # AI integration
-│       ├── commands/       # Tauri commands
-│       ├── db/             # Database layer
-│       ├── search/         # Tantivy search
-│       └── vault/          # Vault management
-└── ...
-```
-
----
-
-## 🗺️ Roadmap
-
-### Completed ✅
-
-- [x] **Phase 1: Foundation** - Note-taking with rich editor
-- [x] **Phase 2: AI Integration** - Multi-provider AI support
-- [x] **Phase 3: Semantic Search** - Embeddings, vector search, wiki-links
-- [x] **Phase 4: Chat Interface** - RAG-powered chat with notes
-- [x] **Phase 4.5: UI Polish** - Header bar, panel toggles, keyboard shortcuts
-
-### In Progress 🚧
-
-- [ ] **Phase 5: AI Agents** - Proactive connection discovery, research agent
-- [ ] **Phase 6: Knowledge Graph** - Visual exploration of note relationships
-
-### Planned 📋
-
-- [ ] **Phase 7: Production Polish** - Performance, cross-platform testing, auto-updates
-- [ ] Import/Export (Obsidian, Notion, Markdown)
-- [ ] Note templates
-- [ ] Tags and advanced filtering
-- [ ] Mobile apps (iOS, Android)
 
 ---
 
