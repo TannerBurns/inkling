@@ -14,7 +14,6 @@ import {
   Calendar,
   CalendarPlus,
   Copy,
-  LayoutGrid,
   Plus,
 } from "lucide-react";
 import {
@@ -516,7 +515,7 @@ export function Sidebar() {
           title="New Board"
         >
           <span className="relative" style={{ width: 18, height: 18, display: "block" }}>
-            <LayoutGrid size={18} />
+            <Kanban size={18} />
             <span
               className="absolute flex items-center justify-center"
               style={{ 
@@ -692,6 +691,7 @@ export function Sidebar() {
               expandedFolders={expandedFolders}
               onToggle={toggleFolder}
               onOpenNote={handleOpenNote}
+              onOpenBoard={handleOpenOrCreateBoard}
               onDrop={handleDrop}
               onFolderContextMenu={handleFolderContextMenu}
               onNoteContextMenu={handleNoteContextMenu}
@@ -1026,6 +1026,7 @@ interface FolderItemProps {
   expandedFolders: Set<string>;
   onToggle: (folderId: string) => void;
   onOpenNote: (noteId: string) => void;
+  onOpenBoard: (folder: Folder) => void;
   onDrop: (folderId: string) => void;
   onFolderContextMenu: (e: React.MouseEvent, folder: Folder) => void;
   onNoteContextMenu: (e: React.MouseEvent, note: Note) => void;
@@ -1058,6 +1059,7 @@ function FolderItem({
   expandedFolders,
   onToggle,
   onOpenNote,
+  onOpenBoard,
   onDrop,
   onFolderContextMenu,
   onNoteContextMenu,
@@ -1208,15 +1210,25 @@ function FolderItem({
           <span className="ml-1 truncate">{folder.name}</span>
         )}
         
-        {/* Board indicator */}
+        {/* Board button */}
         {!isRenaming && hasBoard && (
-          <span title="Has board">
-            <Kanban
-              size={12}
-              className="ml-auto flex-shrink-0"
-              style={{ color: "var(--color-accent)" }}
-            />
-          </span>
+          <button
+            title="Open board"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenBoard(folder);
+            }}
+            className="ml-auto flex-shrink-0 rounded p-0.5 transition-colors"
+            style={{ color: "var(--color-accent)" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--color-accent-light)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
+          >
+            <Kanban size={14} />
+          </button>
         )}
         
         {/* Note count */}
@@ -1255,6 +1267,7 @@ function FolderItem({
               expandedFolders={expandedFolders}
               onToggle={onToggle}
               onOpenNote={onOpenNote}
+              onOpenBoard={onOpenBoard}
               onDrop={onDrop}
               onFolderContextMenu={onFolderContextMenu}
               onNoteContextMenu={onNoteContextMenu}

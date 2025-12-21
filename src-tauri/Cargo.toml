@@ -60,6 +60,12 @@ calamine = "0.28"
 zip = "2.2"
 quick-xml = "0.37"
 
+# Google OAuth
+base64 = "0.22"
+rand = "0.8"
+tiny_http = "0.12"
+sha2 = "0.10"
+
 [dev-dependencies]
 tempfile = "3"
 

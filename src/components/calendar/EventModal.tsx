@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, Calendar, Clock, FileText, Repeat, Link, Unlink } from "lucide-react";
+import { X, Calendar, Clock, FileText, Repeat, Link, Unlink, Chrome, Users, Video } from "lucide-react";
 import { useCalendarStore } from "../../stores/calendarStore";
 import { useNoteStore } from "../../stores/noteStore";
 import type {
@@ -22,9 +22,71 @@ interface EventModalProps {
 /**
  * Modal for creating or editing a calendar event
  */
+/**
+ * Generate meeting note content from event info
+ */
+function generateMeetingNoteContent(
+  title: string,
+  startTime: Date,
+  endTime: Date | null,
+  allDay: boolean,
+  attendees: string[],
+  meetingLink: string | null,
+  agenda: string | null
+): string {
+  const formatDateTime = (date: Date) => {
+    return date.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }) + (allDay ? "" : ` at ${date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+    })}`);
+  };
+
+  let content = `# ${title}\n\n`;
+  
+  // Date and time
+  content += `**Date:** ${formatDateTime(startTime)}`;
+  if (endTime && !allDay) {
+    content += ` - ${endTime.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+    })}`;
+  }
+  content += "\n";
+  
+  // Attendees
+  if (attendees.length > 0) {
+    content += `**Attendees:** ${attendees.join(", ")}\n`;
+  }
+  
+  // Meeting link
+  if (meetingLink) {
+    content += `**Meeting Link:** ${meetingLink}\n`;
+  }
+  
+  content += "\n";
+  
+  // Agenda
+  if (agenda) {
+    content += `## Agenda\n${agenda}\n\n`;
+  }
+  
+  // Notes section
+  content += `## Notes\n\n\n`;
+  
+  // Action items
+  content += `## Action Items\n- [ ] \n`;
+  
+  return content;
+}
+
 export function EventModal({ event, defaultDate, onClose }: EventModalProps) {
-  const { createEvent, updateEvent, unlinkNoteFromEvent } = useCalendarStore();
-  const { notes, createNote, fetchAllNotes } = useNoteStore();
+  const { createEvent, updateEvent: updateCalendarEvent, unlinkNoteFromEvent } = useCalendarStore();
+  const { notes, createNote, updateNote, fetchAllNotes } = useNoteStore();
   
   const isEditing = !!event;
   
@@ -125,10 +187,27 @@ export function EventModal({ event, defaultDate, onClose }: EventModalProps) {
       // Create a new note if requested (only when the event is saved)
       let noteIdToLink = linkedNoteId;
       if (shouldCreateNote && !linkedNoteId) {
-        const noteTitle = `Notes: ${title.trim() || "Event"}`;
+        const noteTitle = title.trim() || "Event";
         const note = await createNote(noteTitle, null);
+        
         if (note) {
           noteIdToLink = note.id;
+          
+          // For Google events, populate note with meeting info template using stored attendees/link
+          if (event?.source === "google" && event.id) {
+            // Use the attendees and meeting link directly from the event data
+            const attendeeNames = event.attendees?.map(a => a.name || a.email) || [];
+            const noteContent = generateMeetingNoteContent(
+              noteTitle,
+              startDateTime,
+              endDateTime,
+              allDay,
+              attendeeNames,
+              event.meetingLink || null,
+              event.description || null
+            );
+            await updateNote(note.id, { content: noteContent });
+          }
         }
       }
       
@@ -143,7 +222,7 @@ export function EventModal({ event, defaultDate, onClose }: EventModalProps) {
           recurrenceRule: generateRecurrenceRule(recurrence),
           linkedNoteId: noteIdToLink,
         };
-        await updateEvent(event.id, input);
+        await updateCalendarEvent(event.id, input);
       } else {
         // Create new event
         const input: CreateCalendarEventInput = {
@@ -212,12 +291,23 @@ export function EventModal({ event, defaultDate, onClose }: EventModalProps) {
           className="flex items-center justify-between border-b px-6 py-4"
           style={{ borderColor: "var(--color-border)" }}
         >
-          <h2
-            className="text-lg font-semibold"
-            style={{ color: "var(--color-text-primary)" }}
-          >
-            {isEditing ? "Edit Event" : "New Event"}
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2
+              className="text-lg font-semibold"
+              style={{ color: "var(--color-text-primary)" }}
+            >
+              {isEditing ? "Edit Event" : "New Event"}
+            </h2>
+            {event?.source === "google" && (
+              <span
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs"
+                style={{ backgroundColor: "rgba(66, 133, 244, 0.1)", color: "#4285f4" }}
+              >
+                <Chrome size={12} />
+                Google
+              </span>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="rounded-md p-1 transition-colors"
@@ -387,6 +477,78 @@ export function EventModal({ event, defaultDate, onClose }: EventModalProps) {
               <option value="yearly">Yearly</option>
             </select>
           </div>
+          
+          {/* Attendees (read-only for Google events) */}
+          {event?.attendees && event.attendees.length > 0 && (
+            <div className="mb-4">
+              <label
+                className="mb-1.5 flex items-center gap-1.5 text-sm font-medium"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                <Users size={14} />
+                Attendees ({event.attendees.length})
+              </label>
+              <div
+                className="rounded-md border px-3 py-2"
+                style={{
+                  backgroundColor: "var(--color-bg-secondary)",
+                  borderColor: "var(--color-border)",
+                }}
+              >
+                <div className="flex flex-wrap gap-1.5">
+                  {event.attendees.map((attendee, i) => (
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs"
+                      style={{
+                        backgroundColor: "var(--color-bg-tertiary)",
+                        color: "var(--color-text-secondary)",
+                      }}
+                      title={`${attendee.email}${attendee.responseStatus ? ` - ${attendee.responseStatus}` : ""}`}
+                    >
+                      {attendee.name || attendee.email.split("@")[0]}
+                      {attendee.isOrganizer && (
+                        <span style={{ color: "var(--color-accent)" }} title="Organizer">★</span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Meeting Link (for Google events) */}
+          {event?.meetingLink && (
+            <div className="mb-4">
+              <label
+                className="mb-1.5 flex items-center gap-1.5 text-sm font-medium"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                <Video size={14} />
+                Meeting Link
+              </label>
+              <a
+                href={event.meetingLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors"
+                style={{
+                  backgroundColor: "rgba(66, 133, 244, 0.1)",
+                  borderColor: "rgba(66, 133, 244, 0.3)",
+                  color: "#4285f4",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "rgba(66, 133, 244, 0.2)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "rgba(66, 133, 244, 0.1)";
+                }}
+              >
+                <Video size={14} />
+                Join meeting
+              </a>
+            </div>
+          )}
           
           {/* Description */}
           <div className="mb-4">

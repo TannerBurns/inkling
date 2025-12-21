@@ -408,6 +408,80 @@ impl CalendarEventSource {
     }
 }
 
+/// Event type for Google Calendar events
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum CalendarEventType {
+    Default,
+    OutOfOffice,
+    FocusTime,
+    WorkingLocation,
+}
+
+impl CalendarEventType {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "outOfOffice" => CalendarEventType::OutOfOffice,
+            "focusTime" => CalendarEventType::FocusTime,
+            "workingLocation" => CalendarEventType::WorkingLocation,
+            _ => CalendarEventType::Default,
+        }
+    }
+    
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CalendarEventType::Default => "default",
+            CalendarEventType::OutOfOffice => "outOfOffice",
+            CalendarEventType::FocusTime => "focusTime",
+            CalendarEventType::WorkingLocation => "workingLocation",
+        }
+    }
+}
+
+/// Response status for calendar events (your RSVP status)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum EventResponseStatus {
+    /// You haven't responded yet
+    NeedsAction,
+    /// You declined the invitation
+    Declined,
+    /// You tentatively accepted (maybe)
+    Tentative,
+    /// You accepted the invitation
+    Accepted,
+}
+
+impl EventResponseStatus {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "declined" => EventResponseStatus::Declined,
+            "tentative" => EventResponseStatus::Tentative,
+            "accepted" => EventResponseStatus::Accepted,
+            _ => EventResponseStatus::NeedsAction,
+        }
+    }
+    
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EventResponseStatus::NeedsAction => "needsAction",
+            EventResponseStatus::Declined => "declined",
+            EventResponseStatus::Tentative => "tentative",
+            EventResponseStatus::Accepted => "accepted",
+        }
+    }
+}
+
+/// An attendee of a calendar event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventAttendee {
+    pub email: String,
+    pub name: Option<String>,
+    pub response_status: Option<String>,
+    pub is_organizer: bool,
+}
+
 /// A calendar event
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -422,6 +496,14 @@ pub struct CalendarEvent {
     pub source: CalendarEventSource,
     pub external_id: Option<String>,
     pub linked_note_id: Option<String>,
+    /// Event type (for Google events: default, outOfOffice, focusTime, workingLocation)
+    pub event_type: CalendarEventType,
+    /// Your response status (for Google events: accepted, declined, tentative, needsAction)
+    pub response_status: Option<EventResponseStatus>,
+    /// List of attendees (for Google events)
+    pub attendees: Option<Vec<EventAttendee>>,
+    /// Video call link (for Google events with Meet/Zoom/etc)
+    pub meeting_link: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -437,6 +519,14 @@ pub struct CreateCalendarEventInput {
     pub all_day: bool,
     pub recurrence_rule: Option<String>,
     pub linked_note_id: Option<String>,
+    /// Event type (optional, defaults to Default)
+    pub event_type: Option<CalendarEventType>,
+    /// Response status (for Google events)
+    pub response_status: Option<EventResponseStatus>,
+    /// List of attendees
+    pub attendees: Option<Vec<EventAttendee>>,
+    /// Video call link
+    pub meeting_link: Option<String>,
 }
 
 /// Input for updating a calendar event
@@ -450,6 +540,14 @@ pub struct UpdateCalendarEventInput {
     pub all_day: Option<bool>,
     pub recurrence_rule: Option<String>,
     pub linked_note_id: Option<String>,
+    /// Event type (for Google events)
+    pub event_type: Option<CalendarEventType>,
+    /// Response status (for Google events)
+    pub response_status: Option<EventResponseStatus>,
+    /// List of attendees
+    pub attendees: Option<Vec<EventAttendee>>,
+    /// Video call link
+    pub meeting_link: Option<String>,
 }
 
 /// A calendar event with linked note details

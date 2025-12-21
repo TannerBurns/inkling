@@ -6,6 +6,34 @@
 export type CalendarEventSource = "manual" | "google";
 
 /**
+ * Event type for Google Calendar events
+ * - default: Regular event
+ * - outOfOffice: Out of office time
+ * - focusTime: Focus time / Do not disturb
+ * - workingLocation: Working location indicator
+ */
+export type CalendarEventType = "default" | "outOfOffice" | "focusTime" | "workingLocation";
+
+/**
+ * Response status for calendar events (your RSVP status)
+ * - needsAction: You haven't responded yet
+ * - declined: You declined the invitation
+ * - tentative: You tentatively accepted (maybe)
+ * - accepted: You accepted the invitation
+ */
+export type EventResponseStatus = "needsAction" | "declined" | "tentative" | "accepted";
+
+/**
+ * An attendee of a calendar event
+ */
+export interface EventAttendee {
+  email: string;
+  name: string | null;
+  responseStatus: string | null;
+  isOrganizer: boolean;
+}
+
+/**
  * A calendar event
  */
 export interface CalendarEvent {
@@ -19,6 +47,10 @@ export interface CalendarEvent {
   source: CalendarEventSource;
   externalId: string | null; // For future Google Calendar sync
   linkedNoteId: string | null;
+  eventType: CalendarEventType; // Type of event (default, outOfOffice, etc.)
+  responseStatus: EventResponseStatus | null; // Your RSVP status (for Google events)
+  attendees: EventAttendee[] | null; // List of attendees (for Google events)
+  meetingLink: string | null; // Video call link (for Google events)
   createdAt: string;
   updatedAt: string;
 }
@@ -54,6 +86,8 @@ export interface UpdateCalendarEventInput {
   allDay?: boolean | null;
   recurrenceRule?: string | null;
   linkedNoteId?: string | null;
+  eventType?: CalendarEventType | null;
+  responseStatus?: EventResponseStatus | null;
 }
 
 /**

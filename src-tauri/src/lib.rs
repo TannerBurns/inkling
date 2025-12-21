@@ -1,6 +1,7 @@
 mod ai;
 mod commands;
 mod db;
+mod google;
 mod models;
 mod search;
 mod sidecar;
@@ -244,6 +245,13 @@ pub fn run() {
             commands::delete_calendar_event,
             commands::link_note_to_calendar_event,
             commands::unlink_note_from_calendar_event,
+            // Google integration commands
+            commands::is_google_configured,
+            commands::initiate_google_auth,
+            commands::get_google_connection_status,
+            commands::disconnect_google_account,
+            commands::sync_google_calendar,
+            commands::get_event_meeting_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

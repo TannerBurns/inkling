@@ -1,0 +1,116 @@
+//! Tauri commands for Google integration
+//!
+//! Provides commands for Google OAuth authentication and Calendar sync.
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use tauri::State;
+
+use crate::google::{self, GoogleAccount};
+use crate::google::calendar::SyncResult;
+use crate::AppPool;
+
+/// Serializable Google account info for frontend
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleConnectionStatus {
+    pub connected: bool,
+    pub email: Option<String>,
+    pub connected_at: Option<String>,
+}
+
+/// Check if Google Client ID is configured
+#[tauri::command]
+pub async fn is_google_configured() -> Result<bool, String> {
+    Ok(google::oauth::get_client_id().is_ok())
+}
+
+/// Initiate Google OAuth flow
+/// Opens the browser to Google's OAuth consent screen
+#[tauri::command]
+pub async fn initiate_google_auth(pool: State<'_, AppPool>) -> Result<GoogleAccount, String> {
+    // Clone the pool Arc to use across await points
+    let db_pool = {
+        let pool_guard = pool.0.read().map_err(|e| e.to_string())?;
+        pool_guard.clone().ok_or("Database not initialized")?
+    };
+
+    google::oauth::initiate_auth_with_pool(&db_pool)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get current Google connection status
+#[tauri::command]
+pub async fn get_google_connection_status(
+    pool: State<'_, AppPool>,
+) -> Result<GoogleConnectionStatus, String> {
+    let pool_guard = pool.0.read().map_err(|e| e.to_string())?;
+    let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+
+    match google::get_connection_status(&conn) {
+        Ok(Some(account)) => Ok(GoogleConnectionStatus {
+            connected: true,
+            email: Some(account.email),
+            connected_at: Some(account.connected_at),
+        }),
+        Ok(None) => Ok(GoogleConnectionStatus {
+            connected: false,
+            email: None,
+            connected_at: None,
+        }),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Disconnect Google account
+#[tauri::command]
+pub async fn disconnect_google_account(pool: State<'_, AppPool>) -> Result<(), String> {
+    let pool_guard = pool.0.read().map_err(|e| e.to_string())?;
+    let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+
+    google::disconnect_account(&conn).map_err(|e| e.to_string())
+}
+
+/// Sync Google Calendar events for a date range
+#[tauri::command]
+pub async fn sync_google_calendar(
+    pool: State<'_, AppPool>,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<SyncResult, String> {
+    // Clone the pool Arc to use across await points
+    let db_pool = {
+        let pool_guard = pool.0.read().map_err(|e| e.to_string())?;
+        pool_guard.clone().ok_or("Database not initialized")?
+    };
+
+    google::calendar::sync_events_to_db_with_pool(&db_pool, start, end)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get meeting info for creating a note from a Google event
+#[tauri::command]
+pub async fn get_event_meeting_info(
+    pool: State<'_, AppPool>,
+    event_id: String,
+) -> Result<Option<crate::google::calendar::EventMeetingInfo>, String> {
+    let pool_guard = pool.0.read().map_err(|e| e.to_string())?;
+    let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+
+    // Get the event
+    let event = crate::db::calendar_events::get_event(&conn, &event_id)
+        .map_err(|e| e.to_string())?;
+    
+    match event {
+        Some(e) => {
+            let info = google::calendar::parse_meeting_info(e.description.as_deref());
+            Ok(Some(info))
+        }
+        None => Ok(None),
+    }
+}
+

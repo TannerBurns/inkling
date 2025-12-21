@@ -75,6 +75,7 @@
 - **Recurring events** - Daily, weekly, monthly, and yearly recurrence support
 - **Note linking** - Connect events directly to your notes
 - **Quick navigation** - Jump to today or browse any date range
+- **Google Calendar Sync** - Connect your Google account to sync events (see [setup guide](#-google-calendar-integration))
 
 ### 💬 Chat with Your Notes
 - Ask questions and get answers from your knowledge base
@@ -224,6 +225,79 @@ npm run build:linux   # Linux x64
 
 ---
 
+## 📅 Google Calendar Integration
+
+Inkling can sync with your Google Calendar to display events alongside your local calendar entries. This is optional and requires a one-time setup.
+
+### Setting Up Google Calendar Sync
+
+#### Option 1: Use Pre-configured Credentials (Recommended)
+
+If you're using an official Inkling release, Google Calendar sync works out of the box:
+
+1. Open **Settings** → **Google**
+2. Click **"Sign in with Google"**
+3. Authorize Inkling in your browser
+4. Your calendar events will sync automatically
+
+#### Option 2: Set Up Your Own Google Cloud Project (For Developers)
+
+If you're building from source or want to use your own credentials:
+
+1. **Create a Google Cloud Project**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project (e.g., "Inkling")
+
+2. **Enable the Google Calendar API**
+   - Navigate to **APIs & Services** → **Library**
+   - Search for "Google Calendar API" and **Enable** it
+
+3. **Configure OAuth Consent Screen**
+   - Go to **APIs & Services** → **OAuth consent screen**
+   - Choose **External** (or **Internal** for Google Workspace)
+   - Fill in the required fields:
+     - App name: "Inkling"
+     - User support email: Your email
+     - Developer contact: Your email
+   - Add scope: `https://www.googleapis.com/auth/calendar.readonly`
+   - Add your email as a test user (while in testing mode)
+
+4. **Create OAuth Credentials**
+   - Go to **APIs & Services** → **Credentials**
+   - Click **Create Credentials** → **OAuth client ID**
+   - Application type: **Desktop application**
+   - Name: "Inkling Desktop"
+   - Click **Create**
+
+5. **Build with your credentials**
+   
+   Set environment variables before building:
+   ```bash
+   export GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+   export GOOGLE_CLIENT_SECRET="your-client-secret"
+   npm run tauri dev   # For development
+   npm run build       # For production builds
+   ```
+   
+   The credentials are embedded at compile time, so users don't need to configure anything.
+
+### How It Works
+
+- **OAuth 2.0 with PKCE** - Secure authentication without exposing secrets
+- **Read-only access** - Inkling can only view your calendar, not modify it
+- **Local token storage** - Your credentials stay on your device
+- **Auto-sync** - Events sync automatically in the background
+- **Attendees & meeting links** - View attendees and join video calls directly
+- **Disconnect anytime** - Remove access from Settings → Google
+
+### Privacy
+
+- Google events are stored locally in your Inkling database
+- No data is sent to any third-party servers
+- You can disconnect your Google account at any time, which deletes all synced data
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Whether it's bug reports, feature requests, or code contributions.
@@ -238,7 +312,7 @@ Contributions are welcome! Whether it's bug reports, feature requests, or code c
 
 ## 📄 License
 
-[MIT License](./LICENSE)
+[MIT License](./LICENSE) • [Privacy Policy](./PRIVACY.md) • [Terms of Service](./TERMS.md)
 
 ---
 

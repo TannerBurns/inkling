@@ -1,7 +1,7 @@
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Chrome } from "lucide-react";
 import { useCalendarStore } from "../../stores/calendarStore";
 import type { CalendarViewType } from "../../types/calendar";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { EventModal } from "./EventModal";
 
 const MONTH_NAMES = [
@@ -91,9 +91,16 @@ export function CalendarHeader() {
     navigatePrevious,
     navigateNext,
     navigateToToday,
+    googleConnected,
+    checkGoogleConnection,
   } = useCalendarStore();
 
   const [showNewEventModal, setShowNewEventModal] = useState(false);
+
+  // Check Google connection on mount (this also starts auto-sync if connected)
+  useEffect(() => {
+    checkGoogleConnection();
+  }, [checkGoogleConnection]);
 
   const title = formatHeaderTitle(currentDate, viewType);
 
@@ -158,7 +165,7 @@ export function CalendarHeader() {
         </h1>
       </div>
 
-      {/* Right: View toggle + New event */}
+      {/* Right: View toggle + Sync + New event */}
       <div className="flex items-center gap-3">
         {/* View toggle */}
         <div
@@ -169,6 +176,25 @@ export function CalendarHeader() {
           <ViewButton label="Week" value="week" current={viewType} onClick={setViewType} />
           <ViewButton label="Month" value="month" current={viewType} onClick={setViewType} />
         </div>
+
+        {/* Google connection indicator */}
+        {googleConnected && (
+          <div
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5"
+            style={{
+              backgroundColor: "rgba(66, 133, 244, 0.1)",
+            }}
+            title="Google Calendar connected - syncing automatically"
+          >
+            <Chrome size={14} style={{ color: "#4285f4" }} />
+            <span
+              className="text-xs font-medium"
+              style={{ color: "#4285f4" }}
+            >
+              Connected
+            </span>
+          </div>
+        )}
 
         {/* New event button */}
         <button

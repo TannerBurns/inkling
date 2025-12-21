@@ -1,4 +1,4 @@
-import { X, Monitor, Sun, Moon, Cpu, Info, MessageCircle, Database, Bot, Tag, Calendar } from "lucide-react";
+import { X, Monitor, Sun, Moon, Cpu, Info, MessageCircle, Database, Bot, Tag, Calendar, Chrome } from "lucide-react";
 import {
   useSettingsStore,
   type Theme,
@@ -9,6 +9,7 @@ import { AgentSettings } from "./AgentSettings";
 import { AssistantSettings } from "./AssistantSettings";
 import { TagsSettings } from "./TagsSettings";
 import { DailyNotesSettings } from "./DailyNotesSettings";
+import { GoogleSettings } from "./GoogleSettings";
 import { DataManagement } from "./DataManagement";
 
 /**
@@ -33,6 +34,7 @@ export function SettingsModal() {
     { id: "assistant", label: "Assistant", icon: MessageCircle },
     { id: "tags", label: "Tags", icon: Tag },
     { id: "daily-notes", label: "Daily Notes", icon: Calendar },
+    { id: "google", label: "Google", icon: Chrome },
     { id: "data", label: "Data", icon: Database },
     { id: "about", label: "About", icon: Info },
   ];
@@ -137,6 +139,7 @@ export function SettingsModal() {
             {activeSettingsTab === "assistant" && <AssistantSettings />}
             {activeSettingsTab === "tags" && <TagsSettings />}
             {activeSettingsTab === "daily-notes" && <DailyNotesSettings />}
+            {activeSettingsTab === "google" && <GoogleSettings />}
             {activeSettingsTab === "data" && <DataManagement />}
             {activeSettingsTab === "about" && <AboutTab />}
           </div>

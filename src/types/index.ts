@@ -115,3 +115,10 @@ export {
   generateRecurrenceRule,
   getFrequencyFromRule,
 } from './calendar';
+
+export type {
+  GoogleConnectionStatus,
+  GoogleSyncResult,
+  EventMeetingInfo,
+  GoogleAccount,
+} from './google';

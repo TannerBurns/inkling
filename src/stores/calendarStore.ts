@@ -6,9 +6,11 @@ import type {
   UpdateCalendarEventInput,
   CalendarViewType,
 } from "../types/calendar";
+import type { GoogleSyncResult } from "../types/google";
 
 // API functions will be imported from lib/tauri.ts
 import * as api from "../lib/tauri";
+import * as googleApi from "../lib/google";
 
 interface CalendarState {
   // State
@@ -19,6 +21,17 @@ interface CalendarState {
   isLoading: boolean;
   error: string | null;
 
+  // Context menu state
+  contextMenuEvent: CalendarEventWithNote | null;
+  contextMenuPosition: { x: number; y: number } | null;
+
+  // Google sync state
+  googleConnected: boolean;
+  isSyncing: boolean;
+  lastSyncedAt: Date | null;
+  lastSyncResult: GoogleSyncResult | null;
+  syncIntervalId: ReturnType<typeof setInterval> | null;
+
   // Actions
   setCurrentDate: (date: Date) => void;
   setViewType: (type: CalendarViewType) => void;
@@ -27,16 +40,26 @@ interface CalendarState {
   navigateToToday: () => void;
 
   // Event actions
-  fetchEventsForRange: (start: Date, end: Date) => Promise<void>;
-  fetchEventsForCurrentView: () => Promise<void>;
+  fetchEventsForRange: (start: Date, end: Date, silent?: boolean) => Promise<void>;
+  fetchEventsForCurrentView: (silent?: boolean) => Promise<void>;
   createEvent: (input: CreateCalendarEventInput) => Promise<CalendarEvent>;
   updateEvent: (id: string, input: UpdateCalendarEventInput) => Promise<CalendarEvent>;
   deleteEvent: (id: string) => Promise<void>;
   linkNoteToEvent: (eventId: string, noteId: string) => Promise<CalendarEvent>;
   unlinkNoteFromEvent: (eventId: string) => Promise<CalendarEvent>;
 
+  // Google sync actions
+  checkGoogleConnection: () => Promise<void>;
+  syncGoogleCalendar: () => Promise<GoogleSyncResult>;
+  startAutoSync: () => void;
+  stopAutoSync: () => void;
+
   // Selection
   selectEvent: (event: CalendarEventWithNote | null) => void;
+
+  // Context menu
+  openContextMenu: (event: CalendarEventWithNote, position: { x: number; y: number }) => void;
+  closeContextMenu: () => void;
 
   // Utilities
   clearError: () => void;
@@ -125,6 +148,17 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   isLoading: false,
   error: null,
 
+  // Context menu state
+  contextMenuEvent: null,
+  contextMenuPosition: null,
+
+  // Google sync state
+  googleConnected: false,
+  isSyncing: false,
+  lastSyncedAt: null,
+  lastSyncResult: null,
+  syncIntervalId: null,
+
   // Set the current date
   setCurrentDate: (date: Date) => {
     set({ currentDate: date });
@@ -186,8 +220,10 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   },
 
   // Fetch events for a date range
-  fetchEventsForRange: async (start: Date, end: Date) => {
-    set({ isLoading: true, error: null });
+  fetchEventsForRange: async (start: Date, end: Date, silent = false) => {
+    if (!silent) {
+      set({ isLoading: true, error: null });
+    }
     try {
       const events = await api.getCalendarEventsInRange(
         start.toISOString(),
@@ -195,15 +231,17 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
       );
       set({ events, isLoading: false });
     } catch (error) {
-      set({ error: String(error), isLoading: false });
+      if (!silent) {
+        set({ error: String(error), isLoading: false });
+      }
     }
   },
 
   // Fetch events for the current view
-  fetchEventsForCurrentView: async () => {
+  fetchEventsForCurrentView: async (silent = false) => {
     const { currentDate, viewType } = get();
     const { start, end } = getViewRange(currentDate, viewType);
-    await get().fetchEventsForRange(start, end);
+    await get().fetchEventsForRange(start, end, silent);
   },
 
   // Create a new event
@@ -280,9 +318,101 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     }
   },
 
+  // Check Google connection status
+  checkGoogleConnection: async () => {
+    try {
+      const status = await googleApi.getGoogleConnectionStatus();
+      const wasConnected = get().googleConnected;
+      set({ googleConnected: status.connected });
+      
+      // Start auto-sync if we just became connected
+      if (status.connected && !wasConnected) {
+        get().startAutoSync();
+        // Do an initial sync
+        get().syncGoogleCalendar().catch(console.error);
+      } else if (!status.connected && wasConnected) {
+        get().stopAutoSync();
+      }
+    } catch {
+      set({ googleConnected: false });
+      get().stopAutoSync();
+    }
+  },
+
+  // Sync Google Calendar events for the current view (runs silently in background)
+  syncGoogleCalendar: async (): Promise<GoogleSyncResult> => {
+    const { currentDate, viewType, isSyncing, lastSyncResult } = get();
+    
+    // Skip if already syncing
+    if (isSyncing) {
+      return lastSyncResult || { eventsSynced: 0, eventsAdded: 0, eventsUpdated: 0, eventsRemoved: 0 };
+    }
+    
+    const { start, end } = getViewRange(currentDate, viewType);
+    
+    // Don't set isSyncing to true to avoid UI flash - sync happens in background
+    try {
+      const result = await googleApi.syncGoogleCalendar(start, end);
+      set({
+        lastSyncedAt: new Date(),
+        lastSyncResult: result,
+      });
+      
+      // Only refresh events if there were actual changes
+      const hasChanges = result.eventsAdded > 0 || result.eventsUpdated > 0 || result.eventsRemoved > 0;
+      if (hasChanges) {
+        // Silent refresh - no loading indicator
+        await get().fetchEventsForCurrentView(true);
+      }
+      return result;
+    } catch (error) {
+      // Don't show error for background syncs - just log it
+      console.error('Background sync failed:', error);
+      return lastSyncResult || { eventsSynced: 0, eventsAdded: 0, eventsUpdated: 0, eventsRemoved: 0 };
+    }
+  },
+
+  // Start auto-sync at 15 second intervals for quick updates
+  startAutoSync: () => {
+    const { syncIntervalId } = get();
+    
+    // Don't start if already running
+    if (syncIntervalId) return;
+    
+    const SYNC_INTERVAL = 30 * 1000; // 15 seconds
+    
+    const intervalId = setInterval(() => {
+      const { googleConnected } = get();
+      if (googleConnected) {
+        get().syncGoogleCalendar().catch(console.error);
+      }
+    }, SYNC_INTERVAL);
+    
+    set({ syncIntervalId: intervalId });
+  },
+
+  // Stop auto-sync
+  stopAutoSync: () => {
+    const { syncIntervalId } = get();
+    if (syncIntervalId) {
+      clearInterval(syncIntervalId);
+      set({ syncIntervalId: null });
+    }
+  },
+
   // Select an event
   selectEvent: (event: CalendarEventWithNote | null) => {
     set({ selectedEvent: event });
+  },
+
+  // Open context menu for an event
+  openContextMenu: (event: CalendarEventWithNote, position: { x: number; y: number }) => {
+    set({ contextMenuEvent: event, contextMenuPosition: position });
+  },
+
+  // Close context menu
+  closeContextMenu: () => {
+    set({ contextMenuEvent: null, contextMenuPosition: null });
   },
 
   // Clear error

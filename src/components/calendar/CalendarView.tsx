@@ -6,6 +6,7 @@ import { MonthView } from "./MonthView";
 import { WeekView } from "./WeekView";
 import { DayView } from "./DayView";
 import { EventModal } from "./EventModal";
+import { EventContextMenu } from "./EventContextMenu";
 
 /**
  * Main calendar view component
@@ -20,6 +21,9 @@ export function CalendarView() {
     clearError,
     selectedEvent,
     selectEvent,
+    contextMenuEvent,
+    contextMenuPosition,
+    closeContextMenu,
   } = useCalendarStore();
 
   // Fetch events on mount
@@ -118,6 +122,15 @@ export function CalendarView() {
         <EventModal
           event={selectedEvent}
           onClose={() => selectEvent(null)}
+        />
+      )}
+
+      {/* Context menu for right-click */}
+      {contextMenuEvent && contextMenuPosition && (
+        <EventContextMenu
+          event={contextMenuEvent}
+          position={contextMenuPosition}
+          onClose={closeContextMenu}
         />
       )}
     </div>
