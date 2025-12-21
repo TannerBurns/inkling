@@ -31,6 +31,8 @@ const SCOPES: &str = "https://www.googleapis.com/auth/calendar.readonly email pr
 pub enum GoogleAuthError {
     #[error("No Google Client ID configured. Set GOOGLE_CLIENT_ID environment variable.")]
     NoClientId,
+    #[error("No Google Client Secret configured. Set GOOGLE_CLIENT_SECRET environment variable.")]
+    NoClientSecret,
     #[error("Failed to start callback server: {0}")]
     ServerError(String),
     #[error("OAuth callback timeout")]
@@ -125,7 +127,7 @@ pub fn get_client_secret() -> Result<String, GoogleAuthError> {
     // Fall back to embedded client secret
     super::config::EMBEDDED_CLIENT_SECRET
         .map(|s| s.to_string())
-        .ok_or(GoogleAuthError::NoClientId) // Reuse error type
+        .ok_or(GoogleAuthError::NoClientSecret)
 }
 
 /// Build the OAuth authorization URL
