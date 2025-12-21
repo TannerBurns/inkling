@@ -71,6 +71,7 @@ pub struct Tag {
 }
 
 /// A link between two notes (wiki-style reference)
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NoteLink {
