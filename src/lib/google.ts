@@ -107,3 +107,21 @@ export async function getEventMeetingInfo(
   };
 }
 
+/**
+ * Save Google OAuth credentials to local storage
+ * This allows users to set up their own Google Cloud project
+ */
+export async function saveGoogleCredentials(
+  clientId: string,
+  clientSecret: string
+): Promise<void> {
+  return invoke("save_google_credentials", { clientId, clientSecret });
+}
+
+/**
+ * Clear saved Google OAuth credentials
+ */
+export async function clearGoogleCredentials(): Promise<void> {
+  return invoke("clear_google_credentials");
+}
+

@@ -258,18 +258,12 @@ Inkling can sync with your Google Calendar to display events alongside your loca
 
 5. **Configure Inkling with your credentials**
    
-   Copy your **Client ID** and **Client Secret** from the Google Cloud Console.
-   
-   Then build Inkling with these environment variables:
-   ```bash
-   export GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
-   export GOOGLE_CLIENT_SECRET="your-client-secret"
-   npm install
-   npm run tauri dev
-   ```
+   - Open Inkling → **Settings** → **Google**
+   - Click **"Configure Credentials"**
+   - Paste your **Client ID** and **Client Secret** from Google Cloud Console
+   - Click **Save Credentials**
 
 6. **Sign in to Google**
-   - Open **Settings** → **Google** in Inkling
    - Click **"Sign in with Google"**
    - Authorize in your browser
    - Your calendar events will sync automatically!

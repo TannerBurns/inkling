@@ -18,10 +18,14 @@ pub struct GoogleConnectionStatus {
     pub connected_at: Option<String>,
 }
 
-/// Check if Google Client ID is configured
+/// Check if Google Client ID is configured (from database, env var, or compile-time)
 #[tauri::command]
-pub async fn is_google_configured() -> Result<bool, String> {
-    Ok(google::oauth::get_client_id().is_ok())
+pub async fn is_google_configured(pool: State<'_, AppPool>) -> Result<bool, String> {
+    let pool_guard = pool.0.read().map_err(|e| e.to_string())?;
+    let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+    
+    Ok(google::oauth::get_client_id_with_db(&conn).is_ok())
 }
 
 /// Initiate Google OAuth flow
@@ -112,5 +116,41 @@ pub async fn get_event_meeting_info(
         }
         None => Ok(None),
     }
+}
+
+/// Save Google OAuth credentials to settings
+#[tauri::command]
+pub async fn save_google_credentials(
+    pool: State<'_, AppPool>,
+    client_id: String,
+    client_secret: String,
+) -> Result<(), String> {
+    let pool_guard = pool.0.read().map_err(|e| e.to_string())?;
+    let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+
+    // Save to settings table
+    crate::db::settings::set_setting(&conn, "google_client_id", &client_id)
+        .map_err(|e| e.to_string())?;
+    crate::db::settings::set_setting(&conn, "google_client_secret", &client_secret)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Clear saved Google OAuth credentials
+#[tauri::command]
+pub async fn clear_google_credentials(pool: State<'_, AppPool>) -> Result<(), String> {
+    let pool_guard = pool.0.read().map_err(|e| e.to_string())?;
+    let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+
+    // Delete from settings table
+    crate::db::settings::delete_setting(&conn, "google_client_id")
+        .map_err(|e| e.to_string())?;
+    crate::db::settings::delete_setting(&conn, "google_client_secret")
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 

@@ -130,6 +130,32 @@ pub fn get_client_secret() -> Result<String, GoogleAuthError> {
         .ok_or(GoogleAuthError::NoClientSecret)
 }
 
+/// Get the Google OAuth Client ID, checking database first for user-provided credentials
+pub fn get_client_id_with_db(conn: &rusqlite::Connection) -> Result<String, GoogleAuthError> {
+    // First check database for user-provided credentials
+    if let Ok(Some(id)) = crate::db::settings::get_setting(conn, "google_client_id") {
+        if !id.is_empty() {
+            return Ok(id);
+        }
+    }
+    
+    // Fall back to compile-time/env var
+    get_client_id()
+}
+
+/// Get the Google OAuth Client Secret, checking database first for user-provided credentials
+pub fn get_client_secret_with_db(conn: &rusqlite::Connection) -> Result<String, GoogleAuthError> {
+    // First check database for user-provided credentials
+    if let Ok(Some(secret)) = crate::db::settings::get_setting(conn, "google_client_secret") {
+        if !secret.is_empty() {
+            return Ok(secret);
+        }
+    }
+    
+    // Fall back to compile-time/env var
+    get_client_secret()
+}
+
 /// Build the OAuth authorization URL
 fn build_auth_url(client_id: &str, code_challenge: &str, state: &str, port: u16) -> String {
     let redirect_uri = format!("http://127.0.0.1:{}/callback", port);
@@ -299,8 +325,13 @@ async fn get_user_info(access_token: &str) -> Result<UserInfoResponse, GoogleAut
 /// 
 /// This version takes a DbPool and can be used across await points safely.
 pub async fn initiate_auth_with_pool(pool: &DbPool) -> Result<GoogleAccount, GoogleAuthError> {
-    let client_id = get_client_id()?;
-    let client_secret = get_client_secret()?;
+    // Get credentials (checking database first, then env vars, then compile-time)
+    let (client_id, client_secret) = {
+        let conn = pool.get().map_err(|e| GoogleAuthError::OAuthError(e.to_string()))?;
+        let id = get_client_id_with_db(&conn)?;
+        let secret = get_client_secret_with_db(&conn)?;
+        (id, secret)
+    };
     
     // Generate PKCE values
     let code_verifier = generate_code_verifier();
@@ -357,8 +388,8 @@ pub async fn initiate_auth_with_pool(pool: &DbPool) -> Result<GoogleAccount, Goo
 /// Initiate the Google OAuth flow (deprecated - use initiate_auth_with_pool)
 #[allow(dead_code)]
 pub async fn initiate_auth(conn: &Connection) -> Result<GoogleAccount, GoogleAuthError> {
-    let client_id = get_client_id()?;
-    let client_secret = get_client_secret()?;
+    let client_id = get_client_id_with_db(conn)?;
+    let client_secret = get_client_secret_with_db(conn)?;
     
     // Generate PKCE values
     let code_verifier = generate_code_verifier();
@@ -490,7 +521,11 @@ pub async fn refresh_token_if_needed_with_pool(pool: &DbPool) -> Result<String, 
     }
     
     // Refresh the token (async HTTP call)
-    let client_id = get_client_id()?;
+    // Get client_id from database or fallback
+    let client_id = {
+        let conn = pool.get().map_err(|e| GoogleAuthError::OAuthError(e.to_string()))?;
+        get_client_id_with_db(&conn)?
+    };
     let client = Client::new();
     
     let params = [
@@ -547,7 +582,7 @@ pub async fn refresh_token_if_needed(conn: &Connection) -> Result<String, Google
     }
     
     // Refresh the token
-    let client_id = get_client_id()?;
+    let client_id = get_client_id_with_db(conn)?;
     let client = Client::new();
     
     let params = [

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Chrome, Loader2, CheckCircle, XCircle, Calendar } from "lucide-react";
+import { Chrome, Loader2, CheckCircle, XCircle, Calendar, Settings, ExternalLink } from "lucide-react";
 import * as googleApi from "../../lib/google";
 import type { GoogleConnectionStatus } from "../../types/google";
 
@@ -11,10 +11,17 @@ export function GoogleSettings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isSavingCredentials, setIsSavingCredentials] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
   const [connectionStatus, setConnectionStatus] =
     useState<GoogleConnectionStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
+  // Credential input state
+  const [showCredentialForm, setShowCredentialForm] = useState(false);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
 
   // Load connection status on mount
   useEffect(() => {
@@ -77,6 +84,45 @@ export function GoogleSettings() {
     }
   }
 
+  async function handleSaveCredentials() {
+    if (!clientId.trim() || !clientSecret.trim()) {
+      setError("Both Client ID and Client Secret are required");
+      return;
+    }
+
+    setIsSavingCredentials(true);
+    setError(null);
+    setSuccessMessage(null);
+    
+    try {
+      await googleApi.saveGoogleCredentials(clientId.trim(), clientSecret.trim());
+      setSuccessMessage("Credentials saved successfully!");
+      setShowCredentialForm(false);
+      setClientId("");
+      setClientSecret("");
+      // Reload to check if now configured
+      await loadStatus();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setIsSavingCredentials(false);
+    }
+  }
+
+  async function handleClearCredentials() {
+    if (!confirm("Are you sure you want to remove your Google credentials?")) {
+      return;
+    }
+    
+    try {
+      await googleApi.clearGoogleCredentials();
+      setSuccessMessage("Credentials removed");
+      await loadStatus();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -105,8 +151,22 @@ export function GoogleSettings() {
         </div>
       )}
 
-      {/* Configuration check */}
-      {!isConfigured && (
+      {/* Success display */}
+      {successMessage && (
+        <div
+          className="flex items-center gap-2 rounded-lg p-3"
+          style={{
+            backgroundColor: "rgba(34, 197, 94, 0.1)",
+            color: "#22c55e",
+          }}
+        >
+          <CheckCircle size={16} />
+          <span className="text-sm">{successMessage}</span>
+        </div>
+      )}
+
+      {/* Configuration check - show setup form */}
+      {!isConfigured && !showCredentialForm && (
         <div
           className="rounded-lg border p-4"
           style={{
@@ -118,15 +178,66 @@ export function GoogleSettings() {
             className="mb-2 font-medium"
             style={{ color: "var(--color-text-primary)" }}
           >
-            Google Integration Not Configured
+            Set Up Google Calendar Sync
           </h4>
           <p
-            className="text-sm"
+            className="mb-4 text-sm"
             style={{ color: "var(--color-text-secondary)" }}
           >
-            To enable Google Calendar sync, you need to set up a Google Cloud
-            project and configure the <code>GOOGLE_CLIENT_ID</code> environment
-            variable. See the{" "}
+            To sync your Google Calendar, you need to create a free Google Cloud project
+            and enter your credentials below.
+          </p>
+          
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowCredentialForm(true)}
+              className="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: "var(--color-accent)",
+                color: "white",
+              }}
+            >
+              <Settings size={16} />
+              Configure Credentials
+            </button>
+            <a
+              href="https://github.com/TannerBurns/inkling#-google-calendar-integration"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: "var(--color-bg-tertiary)",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              <ExternalLink size={16} />
+              Setup Guide
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Credential input form */}
+      {showCredentialForm && (
+        <div
+          className="rounded-lg border p-4"
+          style={{
+            backgroundColor: "var(--color-bg-secondary)",
+            borderColor: "var(--color-border)",
+          }}
+        >
+          <h4
+            className="mb-3 font-medium"
+            style={{ color: "var(--color-text-primary)" }}
+          >
+            Enter Google OAuth Credentials
+          </h4>
+          
+          <p
+            className="mb-4 text-sm"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            Follow the{" "}
             <a
               href="https://github.com/TannerBurns/inkling#-google-calendar-integration"
               target="_blank"
@@ -135,8 +246,89 @@ export function GoogleSettings() {
             >
               setup guide
             </a>{" "}
-            for instructions.
+            to get your Client ID and Secret from Google Cloud Console.
           </p>
+          
+          <div className="space-y-3">
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                Client ID
+              </label>
+              <input
+                type="text"
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                placeholder="xxxxx.apps.googleusercontent.com"
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                style={{
+                  backgroundColor: "var(--color-bg-primary)",
+                  borderColor: "var(--color-border)",
+                  color: "var(--color-text-primary)",
+                }}
+              />
+            </div>
+            
+            <div>
+              <label
+                className="mb-1 block text-sm font-medium"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                Client Secret
+              </label>
+              <input
+                type="password"
+                value={clientSecret}
+                onChange={(e) => setClientSecret(e.target.value)}
+                placeholder="GOCSPX-xxxxx"
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                style={{
+                  backgroundColor: "var(--color-bg-primary)",
+                  borderColor: "var(--color-border)",
+                  color: "var(--color-text-primary)",
+                }}
+              />
+            </div>
+            
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={handleSaveCredentials}
+                disabled={isSavingCredentials}
+                className="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: "var(--color-accent)",
+                  color: "white",
+                  opacity: isSavingCredentials ? 0.7 : 1,
+                }}
+              >
+                {isSavingCredentials ? (
+                  <>
+                    <Loader2 className="animate-spin" size={16} />
+                    Saving...
+                  </>
+                ) : (
+                  "Save Credentials"
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setShowCredentialForm(false);
+                  setClientId("");
+                  setClientSecret("");
+                  setError(null);
+                }}
+                className="rounded-md px-4 py-2 text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: "var(--color-bg-tertiary)",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -234,28 +426,41 @@ export function GoogleSettings() {
             </div>
           </div>
 
-          <button
-            onClick={handleConnect}
-            disabled={isConnecting}
-            className="flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-colors"
-            style={{
-              backgroundColor: "#4285f4",
-              color: "white",
-              opacity: isConnecting ? 0.7 : 1,
-            }}
-          >
-            {isConnecting ? (
-              <>
-                <Loader2 className="animate-spin" size={16} />
-                Connecting...
-              </>
-            ) : (
-              <>
-                <Chrome size={16} />
-                Sign in with Google
-              </>
-            )}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleConnect}
+              disabled={isConnecting}
+              className="flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-colors"
+              style={{
+                backgroundColor: "#4285f4",
+                color: "white",
+                opacity: isConnecting ? 0.7 : 1,
+              }}
+            >
+              {isConnecting ? (
+                <>
+                  <Loader2 className="animate-spin" size={16} />
+                  Connecting...
+                </>
+              ) : (
+                <>
+                  <Chrome size={16} />
+                  Sign in with Google
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleClearCredentials}
+              className="rounded-md px-3 py-2.5 text-sm transition-colors"
+              style={{
+                backgroundColor: "var(--color-bg-tertiary)",
+                color: "var(--color-text-tertiary)",
+              }}
+              title="Remove credentials"
+            >
+              <Settings size={16} />
+            </button>
+          </div>
         </div>
       )}
 
@@ -272,7 +477,7 @@ export function GoogleSettings() {
             "View your Google Calendar events in Inkling's calendar",
             "Create meeting notes with pre-filled attendees and agenda",
             "Link notes to calendar events for easy reference",
-            "Keep your events synced with the click of a button",
+            "Keep your events synced automatically",
           ].map((feature, i) => (
             <li
               key={i}
@@ -293,11 +498,10 @@ export function GoogleSettings() {
       >
         <p className="text-xs" style={{ color: "var(--color-text-tertiary)" }}>
           <strong>Privacy:</strong> Inkling only requests read-only access to
-          your calendar. Your events are stored locally on your device and are
+          your calendar. Your events and credentials are stored locally on your device and are
           never sent to any third-party servers.
         </p>
       </div>
     </div>
   );
 }
-

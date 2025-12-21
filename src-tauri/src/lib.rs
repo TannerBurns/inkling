@@ -252,6 +252,8 @@ pub fn run() {
             commands::disconnect_google_account,
             commands::sync_google_calendar,
             commands::get_event_meeting_info,
+            commands::save_google_credentials,
+            commands::clear_google_credentials,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
