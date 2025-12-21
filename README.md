@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/tanner/inkling/releases/latest">
-    <img src="https://img.shields.io/github/v/release/tanner/inkling?include_prereleases&label=beta&color=7c3aed" alt="Beta Release" />
+  <a href="https://github.com/TannerBurns/inkling/releases/latest">
+    <img src="https://img.shields.io/github/v/release/TannerBurns/inkling?include_prereleases&label=beta&color=7c3aed" alt="Beta Release" />
   </a>
-  <a href="https://github.com/tanner/inkling/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/tanner/inkling?color=7c3aed" alt="License" />
+  <a href="https://github.com/TannerBurns/inkling/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/TannerBurns/inkling?color=7c3aed" alt="License" />
   </a>
   <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-7c3aed" alt="Platforms" />
 </p>
@@ -37,9 +37,9 @@
 
 | Platform | Download |
 |----------|----------|
-| **macOS** (Universal) | [Inkling.dmg](https://github.com/tanner/inkling/releases/latest) |
-| **Windows** | [Inkling-Setup.exe](https://github.com/tanner/inkling/releases/latest) |
-| **Linux** | [Inkling.AppImage](https://github.com/tanner/inkling/releases/latest) |
+| **macOS** (Universal) | [Inkling.dmg](https://github.com/TannerBurns/inkling/releases/latest) |
+| **Windows** | [Inkling-Setup.exe](https://github.com/TannerBurns/inkling/releases/latest) |
+| **Linux** | [Inkling.AppImage](https://github.com/TannerBurns/inkling/releases/latest) |
 
 ---
 
@@ -170,7 +170,7 @@ Inkling is built with performance and privacy in mind:
 
 ```bash
 # Clone the repository
-git clone https://github.com/tanner/inkling.git
+git clone https://github.com/TannerBurns/inkling.git
 cd inkling
 
 # Install dependencies
