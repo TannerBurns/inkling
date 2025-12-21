@@ -156,6 +156,48 @@ pub fn get_client_secret_with_db(conn: &rusqlite::Connection) -> Result<String, 
     get_client_secret()
 }
 
+/// Initialize Google credentials from environment variables
+/// 
+/// This checks for GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables
+/// and persists them to the database if found. This allows users to set env vars once
+/// and have them work even when launching the app from Finder/Spotlight.
+/// 
+/// Returns true if credentials were found and saved.
+pub fn init_google_credentials_from_env(conn: &rusqlite::Connection) -> bool {
+    // Check if credentials are already in the database
+    let db_has_credentials = crate::db::settings::get_setting(conn, "google_client_id")
+        .ok()
+        .flatten()
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+    
+    if db_has_credentials {
+        // Database already has credentials, don't overwrite
+        return false;
+    }
+    
+    // Check environment variables
+    let env_client_id = std::env::var("GOOGLE_CLIENT_ID").ok();
+    let env_client_secret = std::env::var("GOOGLE_CLIENT_SECRET").ok();
+    
+    match (env_client_id, env_client_secret) {
+        (Some(id), Some(secret)) if !id.is_empty() && !secret.is_empty() => {
+            // Save to database
+            if let Err(e) = crate::db::settings::set_setting(conn, "google_client_id", &id) {
+                log::warn!("Failed to save Google Client ID from env: {}", e);
+                return false;
+            }
+            if let Err(e) = crate::db::settings::set_setting(conn, "google_client_secret", &secret) {
+                log::warn!("Failed to save Google Client Secret from env: {}", e);
+                return false;
+            }
+            log::info!("Google credentials loaded from environment variables and saved to database");
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Build the OAuth authorization URL
 fn build_auth_url(client_id: &str, code_challenge: &str, state: &str, port: u16) -> String {
     let redirect_uri = format!("http://127.0.0.1:{}/callback", port);

@@ -98,6 +98,12 @@ pub fn run() {
                     log::warn!("Failed to initialize AI config: {}", e);
                 }
             }
+            
+            // Initialize Google credentials from environment variables
+            // This persists env vars to database so they work when app is launched from Finder
+            if google::oauth::init_google_credentials_from_env(&conn) {
+                log::info!("Google credentials initialized from environment variables");
+            }
         }
     }
 
