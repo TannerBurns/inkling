@@ -1,0 +1,23 @@
+pub mod agent;
+mod config;
+pub mod embed_queue;
+pub mod embeddings;
+pub mod inline_assistant;
+pub mod llm;
+pub mod rag;
+pub mod research_agent;
+pub mod summarization_agent;
+pub mod tagging_agent;
+pub mod tools;
+
+pub use agent::*;
+pub use config::*;
+pub use embed_queue::*;
+pub use embeddings::*;
+pub use inline_assistant::*;
+pub use llm::{create_client, LlmClient, LlmError};
+pub use rag::*;
+pub use research_agent::*;
+pub use summarization_agent::*;
+pub use tagging_agent::*;
+pub use tools::*;

@@ -1,0 +1,202 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0, v2024.12.03
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
+
+permissions:
+  contents: write  # Required to create releases
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: universal-apple-darwin
+            name: macOS
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: Linux
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: Windows
+
+    runs-on: ${{ matrix.platform }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Linux dependencies
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # macOS signing setup
+      - name: Import signing certificate (macOS)
+        if: matrix.platform == 'macos-latest'
+        env:
+          CERTIFICATE_P12: ${{ secrets.CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          # Skip if no certificate is configured
+          if [ -z "$CERTIFICATE_P12" ]; then
+            echo "No signing certificate configured, skipping..."
+            exit 0
+          fi
+          
+          # Create temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          
+          # Import certificate
+          echo "$CERTIFICATE_P12" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 \
+            -P "$CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          
+          # Allow codesign to access the keychain
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          
+          # Add to keychain search list
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain
+          
+          # Clean up certificate file
+          rm $RUNNER_TEMP/certificate.p12
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      # macOS: Add both architectures for universal binary
+      - name: Add macOS targets
+        if: matrix.platform == 'macos-latest'
+        run: |
+          rustup target add aarch64-apple-darwin
+          rustup target add x86_64-apple-darwin
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS signing
+          APPLE_SIGNING_IDENTITY: ${{ secrets.DEVELOPER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          # Enable notarization only if secrets are set
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Inkling ${{ github.ref_name }}'
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
+          args: --target ${{ matrix.target }}
+
+      - name: Get version from tag
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "version=dev-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload artifacts (macOS)
+        if: matrix.platform == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Inkling-${{ steps.version.outputs.version }}-macOS
+          path: |
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
+          if-no-files-found: warn
+
+      - name: Upload artifacts (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Inkling-${{ steps.version.outputs.version }}-Linux
+          path: |
+            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
+            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+          if-no-files-found: warn
+
+      - name: Upload artifacts (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Inkling-${{ steps.version.outputs.version }}-Windows
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          if-no-files-found: warn
+
+      # Cleanup keychain (macOS only)
+      - name: Cleanup keychain
+        if: always() && matrix.platform == 'macos-latest'
+        run: |
+          security delete-keychain $RUNNER_TEMP/signing.keychain-db || true
+
+  # Cleanup old releases after all builds complete
+  cleanup:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cleanup old releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Keep the latest 5 releases, delete older ones
+          KEEP_COUNT=5
+          
+          # Get all releases sorted by date (newest first), skip the first N
+          gh release list --limit 100 --json tagName,createdAt \
+            --jq ".[${KEEP_COUNT}:] | .[].tagName" | while read -r tag; do
+            if [ -n "$tag" ]; then
+              echo "Deleting old release: $tag"
+              gh release delete "$tag" --yes --cleanup-tag || true
+            fi
+          done
+

@@ -1,0 +1,65 @@
+[package]
+name = "Inkling"
+version = "0.1.0"
+description = "A local-first, AI-powered note-taking app"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "inkling_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled", "array"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.25"
+sqlite-vec = "0.1"
+zerocopy = { version = "0.8", features = ["derive"] }
+
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+directories = "5"
+
+# Search
+tantivy = "0.22"
+
+# AI integration
+tauri-plugin-shell = "2"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tokio = { version = "1", features = ["sync", "time", "macros"] }
+log = "0.4"
+regex = "1"
+futures-util = "0.3"
+
+# Vault/File system
+notify = { version = "6.1", default-features = false, features = ["macos_kqueue"] }
+notify-debouncer-mini = "0.4"
+serde_yaml = "0.9"
+tauri-plugin-dialog = "2"
+async-trait = "0.1.89"
+
+# Document text extraction
+pdf-extract = "0.7"
+calamine = "0.28"
+zip = "2.2"
+quick-xml = "0.37"
+
+[dev-dependencies]
+tempfile = "3"
+
