@@ -227,22 +227,9 @@ npm run build:linux   # Linux x64
 
 ## 📅 Google Calendar Integration
 
-Inkling can sync with your Google Calendar to display events alongside your local calendar entries. This is optional and requires a one-time setup.
+Inkling can sync with your Google Calendar to display events alongside your local calendar entries. This is optional and requires a one-time setup of your own Google Cloud project (takes ~5 minutes).
 
 ### Setting Up Google Calendar Sync
-
-#### Option 1: Use Pre-configured Credentials (Recommended)
-
-If you're using an official Inkling release, Google Calendar sync works out of the box:
-
-1. Open **Settings** → **Google**
-2. Click **"Sign in with Google"**
-3. Authorize Inkling in your browser
-4. Your calendar events will sync automatically
-
-#### Option 2: Set Up Your Own Google Cloud Project (For Developers)
-
-If you're building from source or want to use your own credentials:
 
 1. **Create a Google Cloud Project**
    - Go to [Google Cloud Console](https://console.cloud.google.com/)
@@ -269,17 +256,23 @@ If you're building from source or want to use your own credentials:
    - Name: "Inkling Desktop"
    - Click **Create**
 
-5. **Build with your credentials**
+5. **Configure Inkling with your credentials**
    
-   Set environment variables before building:
+   Copy your **Client ID** and **Client Secret** from the Google Cloud Console.
+   
+   Then build Inkling with these environment variables:
    ```bash
    export GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
    export GOOGLE_CLIENT_SECRET="your-client-secret"
-   npm run tauri dev   # For development
-   npm run build       # For production builds
+   npm install
+   npm run tauri dev
    ```
-   
-   The credentials are embedded at compile time, so users don't need to configure anything.
+
+6. **Sign in to Google**
+   - Open **Settings** → **Google** in Inkling
+   - Click **"Sign in with Google"**
+   - Authorize in your browser
+   - Your calendar events will sync automatically!
 
 ### How It Works
 
