@@ -182,3 +182,62 @@ pub async fn get_google_credential_source(pool: State<'_, AppPool>) -> Result<St
     Ok("none".to_string())
 }
 
+/// Response for get_current_google_credentials
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CurrentCredentialsResponse {
+    pub client_id: Option<String>,
+    pub client_secret_set: bool,
+    pub source: String,
+}
+
+/// Get the current Google credentials for display in UI
+/// Client ID is shown, client secret is just indicated as set/not set
+#[tauri::command]
+pub async fn get_current_google_credentials(pool: State<'_, AppPool>) -> Result<CurrentCredentialsResponse, String> {
+    let pool_guard = pool.0.read().map_err(|e| e.to_string())?;
+    let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+
+    // Check database first
+    if let Ok(Some(id)) = crate::db::settings::get_setting(&conn, "google_client_id") {
+        if !id.is_empty() {
+            let secret_set = crate::db::settings::get_setting(&conn, "google_client_secret")
+                .ok()
+                .flatten()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
+            return Ok(CurrentCredentialsResponse {
+                client_id: Some(id),
+                client_secret_set: secret_set,
+                source: "database".to_string(),
+            });
+        }
+    }
+
+    // Check environment variable
+    if let Ok(id) = std::env::var("GOOGLE_CLIENT_ID") {
+        let secret_set = std::env::var("GOOGLE_CLIENT_SECRET").is_ok();
+        return Ok(CurrentCredentialsResponse {
+            client_id: Some(id),
+            client_secret_set: secret_set,
+            source: "environment".to_string(),
+        });
+    }
+
+    // Check embedded/compile-time
+    if let Some(id) = crate::google::config::EMBEDDED_CLIENT_ID {
+        let secret_set = crate::google::config::EMBEDDED_CLIENT_SECRET.is_some();
+        return Ok(CurrentCredentialsResponse {
+            client_id: Some(id.to_string()),
+            client_secret_set: secret_set,
+            source: "embedded".to_string(),
+        });
+    }
+
+    Ok(CurrentCredentialsResponse {
+        client_id: None,
+        client_secret_set: false,
+        source: "none".to_string(),
+    })
+}
+

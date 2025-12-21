@@ -255,6 +255,7 @@ pub fn run() {
             commands::save_google_credentials,
             commands::clear_google_credentials,
             commands::get_google_credential_source,
+            commands::get_current_google_credentials,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

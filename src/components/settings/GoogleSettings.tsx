@@ -24,6 +24,7 @@ export function GoogleSettings() {
   const [showCredentialForm, setShowCredentialForm] = useState(false);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  const [existingSecretSet, setExistingSecretSet] = useState(false);
 
   // Load connection status on mount
   useEffect(() => {
@@ -33,6 +34,7 @@ export function GoogleSettings() {
   async function loadStatus() {
     setIsLoading(true);
     setError(null);
+    setSuccessMessage(null);
     try {
       const [configured, status, source] = await Promise.all([
         googleApi.isGoogleConfigured(),
@@ -52,6 +54,7 @@ export function GoogleSettings() {
   async function handleConnect() {
     setIsConnecting(true);
     setError(null);
+    setSuccessMessage(null);
     try {
       await googleApi.initiateGoogleAuth();
       // Reload status after successful auth
@@ -74,6 +77,7 @@ export function GoogleSettings() {
 
     setIsDisconnecting(true);
     setError(null);
+    setSuccessMessage(null);
     try {
       await googleApi.disconnectGoogleAccount();
       setConnectionStatus({
@@ -89,14 +93,19 @@ export function GoogleSettings() {
   }
 
   async function handleSaveCredentials() {
-    if (!clientId.trim() || !clientSecret.trim()) {
-      setError("Both Client ID and Client Secret are required");
+    setError(null);
+    setSuccessMessage(null);
+    
+    if (!clientId.trim()) {
+      setError("Client ID is required");
+      return;
+    }
+    if (!clientSecret.trim()) {
+      setError("Client Secret is required");
       return;
     }
 
     setIsSavingCredentials(true);
-    setError(null);
-    setSuccessMessage(null);
     
     try {
       await googleApi.saveGoogleCredentials(clientId.trim(), clientSecret.trim());
@@ -104,6 +113,7 @@ export function GoogleSettings() {
       setShowCredentialForm(false);
       setClientId("");
       setClientSecret("");
+      setExistingSecretSet(false);
       // Reload to check if now configured
       await loadStatus();
     } catch (err) {
@@ -127,6 +137,31 @@ export function GoogleSettings() {
       await loadStatus();
     } catch (err) {
       setError(String(err));
+    }
+  }
+
+  async function handleOpenCredentialForm() {
+    setError(null);
+    setSuccessMessage(null);
+    
+    try {
+      // Fetch current credentials to pre-populate the form
+      const current = await googleApi.getCurrentCredentials();
+      if (current.clientId) {
+        setClientId(current.clientId);
+        setExistingSecretSet(current.clientSecretSet);
+      } else {
+        setClientId("");
+        setExistingSecretSet(false);
+      }
+      setClientSecret(""); // Never pre-populate the secret for security
+      setShowCredentialForm(true);
+    } catch (err) {
+      // If we can't fetch, just show empty form
+      setClientId("");
+      setClientSecret("");
+      setExistingSecretSet(false);
+      setShowCredentialForm(true);
     }
   }
 
@@ -298,7 +333,7 @@ export function GoogleSettings() {
           
           <div className="flex gap-2">
             <button
-              onClick={() => setShowCredentialForm(true)}
+              onClick={handleOpenCredentialForm}
               className="flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
               style={{
                 backgroundColor: "var(--color-accent)",
@@ -385,12 +420,20 @@ export function GoogleSettings() {
                 style={{ color: "var(--color-text-secondary)" }}
               >
                 Client Secret
+                {existingSecretSet && (
+                  <span
+                    className="ml-2 text-xs font-normal"
+                    style={{ color: "var(--color-text-tertiary)" }}
+                  >
+                    (leave blank to keep existing)
+                  </span>
+                )}
               </label>
               <input
                 type="password"
                 value={clientSecret}
                 onChange={(e) => setClientSecret(e.target.value)}
-                placeholder="GOCSPX-xxxxx"
+                placeholder={existingSecretSet ? "••••••••••••••••" : "GOCSPX-xxxxx"}
                 className="w-full rounded-md border px-3 py-2 text-sm"
                 style={{
                   backgroundColor: "var(--color-bg-primary)",

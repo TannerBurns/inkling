@@ -137,3 +137,29 @@ export async function getCredentialSource(): Promise<CredentialSource> {
   return invoke<CredentialSource>("get_google_credential_source");
 }
 
+/**
+ * Current credential info (for displaying in UI)
+ */
+export interface CurrentCredentials {
+  clientId: string | null;
+  clientSecretSet: boolean;
+  source: CredentialSource;
+}
+
+/**
+ * Get the current credentials for display (client ID shown, secret is masked)
+ */
+export async function getCurrentCredentials(): Promise<CurrentCredentials> {
+  const result = await invoke<{
+    client_id: string | null;
+    client_secret_set: boolean;
+    source: string;
+  }>("get_current_google_credentials");
+  
+  return {
+    clientId: result.client_id,
+    clientSecretSet: result.client_secret_set,
+    source: result.source as CredentialSource,
+  };
+}
+
