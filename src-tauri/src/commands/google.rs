@@ -181,3 +181,66 @@ pub async fn get_google_credential_source(pool: State<'_, AppPool>) -> Result<St
 
     Ok("none".to_string())
 }
+
+/// Response for get_current_google_credentials
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CurrentCredentialsResponse {
+    pub client_id: Option<String>,
+    pub client_secret_set: bool,
+    pub source: String,
+}
+
+/// Get the current Google credentials for display in UI
+/// Client ID is shown, client secret is just indicated as set/not set
+/// Uses the same fallback logic as actual credential retrieval (DB → env → embedded)
+#[tauri::command]
+pub async fn get_current_google_credentials(pool: State<'_, AppPool>) -> Result<CurrentCredentialsResponse, String> {
+    let pool_guard = pool.0.read().map_err(|e| e.to_string())?;
+    let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+    let conn = db_pool.get().map_err(|e| e.to_string())?;
+
+    // Use the same logic as get_client_id_with_db to get client ID and determine source
+    let (client_id, source) = {
+        // Check database first
+        if let Ok(Some(id)) = crate::db::settings::get_setting(&conn, "google_client_id") {
+            if !id.is_empty() {
+                (Some(id), "database")
+            } else {
+                (None, "none")
+            }
+        // Check environment variable
+        } else if let Ok(id) = std::env::var("GOOGLE_CLIENT_ID") {
+            (Some(id), "environment")
+        // Check embedded/compile-time
+        } else if let Some(id) = crate::google::config::EMBEDDED_CLIENT_ID {
+            (Some(id.to_string()), "embedded")
+        } else {
+            (None, "none")
+        }
+    };
+
+    // Check if a secret is available using the same fallback logic as get_client_secret_with_db
+    // This ensures the UI correctly reports whether a secret exists from ANY source
+    let secret_set = {
+        // Check database first
+        if let Ok(Some(secret)) = crate::db::settings::get_setting(&conn, "google_client_secret") {
+            if !secret.is_empty() {
+                true
+            } else {
+                // Fall back to env var
+                std::env::var("GOOGLE_CLIENT_SECRET").is_ok()
+                    || crate::google::config::EMBEDDED_CLIENT_SECRET.is_some()
+            }
+        } else {
+            // Fall back to env var or embedded
+            std::env::var("GOOGLE_CLIENT_SECRET").is_ok()
+                || crate::google::config::EMBEDDED_CLIENT_SECRET.is_some()
+        }
+    };
+
+    Ok(CurrentCredentialsResponse {
+        client_id,
+        client_secret_set: secret_set,
+        source: source.to_string(),
+    })
+}
