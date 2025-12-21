@@ -4,6 +4,8 @@ import { useEditorGroupStore } from "../../stores/editorGroupStore";
 import { useNoteStore } from "../../stores/noteStore";
 import { NoteEditorContent } from "./NoteEditorContent";
 import { BoardView } from "../board/BoardView";
+import { GraphView } from "../graph/GraphView";
+import { CalendarView } from "../calendar/CalendarView";
 
 interface PaneContentProps {
   groupId: string;
@@ -66,6 +68,14 @@ export function PaneContent({ groupId, activeTab }: PaneContentProps) {
 
   if (activeTab.type === "board") {
     return <BoardView boardId={activeTab.id} />;
+  }
+
+  if (activeTab.type === "graph") {
+    return <GraphView />;
+  }
+
+  if (activeTab.type === "calendar") {
+    return <CalendarView />;
   }
 
   return null;

@@ -5,7 +5,7 @@
  * through the configured AI providers.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
 import type { AIProvider } from "../types/ai";
 import type { ReasoningEffort, ThinkingConfig } from "../types/models";
@@ -162,7 +162,10 @@ export function useAI(): UseAIResult {
     }
   }, [isInitialized, loadAIConfig]);
 
-  const enabledProviders = aiConfig?.providers.filter((p) => p.isEnabled) ?? [];
+  const enabledProviders = useMemo(
+    () => aiConfig?.providers.filter((p) => p.isEnabled) ?? [],
+    [aiConfig?.providers]
+  );
 
   const defaultProvider =
     aiConfig?.defaultProvider
@@ -479,6 +482,7 @@ export function useAI(): UseAIResult {
 
       return yield* processStream(response, model);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [isReady, getModelString, buildRequestBody, getProviderBaseUrl, getProviderApiKey],
   );
 

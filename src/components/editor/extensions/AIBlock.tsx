@@ -298,6 +298,7 @@ function AIBlockComponent({ node, updateAttributes, deleteNode, editor }: NodeVi
         unlistenRef.current = null;
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputValue, attrs.progress, updateAttributes]);
 
   const handleCancel = useCallback(() => {
@@ -306,6 +307,8 @@ function AIBlockComponent({ node, updateAttributes, deleteNode, editor }: NodeVi
       state: "input",
       progress: [],
     });
+    deleteNode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [updateAttributes]);
 
   const handleRetry = useCallback(() => {

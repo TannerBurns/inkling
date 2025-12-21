@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   Cloud,
   Server,
@@ -1357,11 +1357,7 @@ function EmbeddingStatusBar({ config, onAutoEmbedChange, onModelsLoaded }: Embed
   const [isReindexing, setIsReindexing] = useState(false);
   const [reindexResult, setReindexResult] = useState<{ message: string; isError: boolean } | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [modelsData, statsData] = await Promise.all([
@@ -1375,7 +1371,11 @@ function EmbeddingStatusBar({ config, onAutoEmbedChange, onModelsLoaded }: Embed
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [onModelsLoaded]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleReindex = async () => {
     setIsReindexing(true);

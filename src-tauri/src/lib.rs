@@ -231,6 +231,19 @@ pub fn run() {
             commands::execute_summarization_agent,
             commands::execute_research_agent,
             commands::extract_attachment_text,
+            // Graph commands
+            commands::get_graph_data,
+            // Calendar commands
+            commands::create_calendar_event,
+            commands::get_calendar_event,
+            commands::get_calendar_event_with_note,
+            commands::get_all_calendar_events,
+            commands::get_calendar_events_in_range,
+            commands::get_calendar_events_for_date,
+            commands::update_calendar_event,
+            commands::delete_calendar_event,
+            commands::link_note_to_calendar_event,
+            commands::unlink_note_from_calendar_event,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

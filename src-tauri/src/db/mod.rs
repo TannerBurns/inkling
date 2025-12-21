@@ -1,4 +1,5 @@
 pub mod boards;
+pub mod calendar_events;
 pub mod connection;
 pub mod conversations;
 pub mod embeddings;

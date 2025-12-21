@@ -232,7 +232,7 @@ export function SplitContainer() {
         if (activeGroup && activeGroup.activeTabId) {
           const parts = activeGroup.activeTabId.split(":");
           if (parts.length === 2) {
-            const tab = { type: parts[0] as "note" | "board", id: parts[1] };
+            const tab = { type: parts[0] as "note" | "board" | "graph", id: parts[1] };
             useEditorGroupStore.getState().splitWithTab(tab, activeGroupId);
           }
         }

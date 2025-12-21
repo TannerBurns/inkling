@@ -74,6 +74,7 @@ export function HeaderSearch({ isOpen, onClose }: HeaderSearchProps) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showDropdown, results, selectedIndex, onClose]);
 
   // Debounced search

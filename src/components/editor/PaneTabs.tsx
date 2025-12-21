@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useMemo, useEffect } from "react";
-import { X, FileText, Kanban, SplitSquareHorizontal } from "lucide-react";
+import { X, FileText, Kanban, SplitSquareHorizontal, Network, Calendar } from "lucide-react";
 import {
   useEditorGroupStore,
   type EditorGroup,
@@ -52,10 +52,15 @@ export function PaneTabs({ group: groupProp }: PaneTabsProps) {
       if (tab.type === "note") {
         const note = notes.find((n) => n.id === tab.id);
         return { ...tab, title: note?.title || "Untitled" };
-      } else {
+      } else if (tab.type === "board") {
         const board = boards.find((b) => b.id === tab.id);
         return { ...tab, title: board?.name || "Untitled Board" };
+      } else if (tab.type === "graph") {
+        return { ...tab, title: "Knowledge Graph" };
+      } else if (tab.type === "calendar") {
+        return { ...tab, title: "Calendar" };
       }
+      return { ...tab, title: "Unknown" };
     });
   }, [group.tabs, notes, boards]);
 
@@ -249,7 +254,6 @@ export function PaneTabs({ group: groupProp }: PaneTabsProps) {
           draggedTab.type === tab.type &&
           draggedTab.id === tab.id;
         const isDropTargetTab = dropIndex === index && !isDraggedTab;
-        const isNote = tab.type === "note";
         const canSplit = groups.length < 5; // Limit to 5 panes
 
         return (
@@ -293,10 +297,14 @@ export function PaneTabs({ group: groupProp }: PaneTabsProps) {
             }}
           >
             {/* Icon based on type */}
-            {isNote ? (
+            {tab.type === "note" ? (
               <FileText size={14} className="flex-shrink-0 opacity-60" />
-            ) : (
+            ) : tab.type === "board" ? (
               <Kanban size={14} className="flex-shrink-0 opacity-60" />
+            ) : tab.type === "calendar" ? (
+              <Calendar size={14} className="flex-shrink-0 opacity-60" />
+            ) : (
+              <Network size={14} className="flex-shrink-0 opacity-60" />
             )}
             <span className="truncate">{tab.title}</span>
 

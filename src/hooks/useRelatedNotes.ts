@@ -80,6 +80,7 @@ export function useRelatedNotes(
         abortRef.current.abort();
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteId, limit, debounceMs]);
 
   const refetch = () => {

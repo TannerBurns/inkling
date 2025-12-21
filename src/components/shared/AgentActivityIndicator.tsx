@@ -67,10 +67,7 @@ export function AgentActivityIndicator() {
       <button
         onClick={() => setShowPopover(!showPopover)}
         className="relative flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-tertiary)]"
-        title={isRunning 
-          ? `${runningAgents.length} agent${runningAgents.length > 1 ? "s" : ""} running` 
-          : "Background agents (idle)"
-        }
+        title="Background Agents"
       >
         <Bot
           size={16}

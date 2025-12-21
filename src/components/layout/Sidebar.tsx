@@ -5,15 +5,17 @@ import {
   FolderOpen,
   ChevronRight,
   ChevronDown,
-  Plus,
-  Settings,
+  FilePlus,
   FolderPlus,
   Inbox,
   Trash2,
   Pencil,
   Kanban,
   Calendar,
+  CalendarPlus,
   Copy,
+  LayoutGrid,
+  Plus,
 } from "lucide-react";
 import {
   useFolderStore,
@@ -23,7 +25,6 @@ import {
 import { useNoteStore } from "../../stores/noteStore";
 import { useBoardStore } from "../../stores/boardStore";
 import { useEditorGroupStore, useActiveTab } from "../../stores/editorGroupStore";
-import { useSettingsStore } from "../../stores/settingsStore";
 import { useDragStore } from "../../stores/dragStore";
 import { useDailyNotesStore } from "../../stores/dailyNotesStore";
 import type { Note } from "../../types/note";
@@ -61,7 +62,6 @@ export function Sidebar() {
   const { openTab } = useEditorGroupStore();
   const activeTab = useActiveTab();
   const selectedNoteId = activeTab?.type === "note" ? activeTab.id : null;
-  const { openSettings } = useSettingsStore();
   const { isDragging, draggedNoteId, endDrag, startDrag } = useDragStore();
   const { openTodayNote, isLoading: isDailyNoteLoading } = useDailyNotesStore();
   const folderTree = useFolderTree();
@@ -119,6 +119,9 @@ export function Sidebar() {
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renamingNoteId, setRenamingNoteId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+
+  // New board modal state
+  const [showNewBoardModal, setShowNewBoardModal] = useState(false);
 
   // Find the Daily Notes folder
   const dailyNotesFolder = useMemo(() => {
@@ -441,29 +444,27 @@ export function Sidebar() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header / New Note Button */}
+      {/* Header / Action Buttons */}
       <div
-        className="flex flex-shrink-0 items-center gap-2 border-b p-3"
+        className="flex flex-shrink-0 items-center justify-center gap-1 border-b p-2"
         style={{ borderColor: "var(--color-border)" }}
       >
+        {/* New Note */}
         <button
           onClick={handleCreateNote}
-          className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
-          style={{
-            backgroundColor: "var(--color-accent)",
-            color: "var(--color-text-inverse)",
-          }}
+          className="cursor-pointer rounded-lg p-2 transition-colors"
+          style={{ color: "var(--color-text-secondary)" }}
           onMouseEnter={(e) =>
-            (e.currentTarget.style.backgroundColor =
-              "var(--color-accent-hover)")
+            (e.currentTarget.style.backgroundColor = "var(--color-bg-hover)")
           }
           onMouseLeave={(e) =>
-            (e.currentTarget.style.backgroundColor = "var(--color-accent)")
+            (e.currentTarget.style.backgroundColor = "transparent")
           }
+          title="New Note (⌘N)"
         >
-          <Plus size={16} />
-          New Note
+          <FilePlus size={18} />
         </button>
+        {/* New Daily Note */}
         <button
           onClick={handleOpenDailyNote}
           disabled={isDailyNoteLoading}
@@ -478,10 +479,11 @@ export function Sidebar() {
           onMouseLeave={(e) =>
             (e.currentTarget.style.backgroundColor = "transparent")
           }
-          title="Today's Note"
+          title="New Daily Note (⌘D)"
         >
-          <Calendar size={18} />
+          <CalendarPlus size={18} />
         </button>
+        {/* New Folder */}
         <button
           onClick={() => {
             setCreatingFolderParentId(null);
@@ -499,6 +501,36 @@ export function Sidebar() {
           title="New Folder"
         >
           <FolderPlus size={18} />
+        </button>
+        {/* New Board */}
+        <button
+          onClick={() => setShowNewBoardModal(true)}
+          className="cursor-pointer rounded-lg p-2 transition-colors flex items-center justify-center"
+          style={{ color: "var(--color-text-secondary)" }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.backgroundColor = "var(--color-bg-hover)")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.backgroundColor = "transparent")
+          }
+          title="New Board"
+        >
+          <span className="relative" style={{ width: 18, height: 18, display: "block" }}>
+            <LayoutGrid size={18} />
+            <span
+              className="absolute flex items-center justify-center"
+              style={{ 
+                bottom: 0,
+                right: -3,
+                fontSize: "11px",
+                fontWeight: 800,
+                lineHeight: 1,
+                textShadow: "-1px -1px 0 var(--color-bg-secondary), 1px -1px 0 var(--color-bg-secondary), -1px 1px 0 var(--color-bg-secondary), 1px 1px 0 var(--color-bg-secondary)",
+              }}
+            >
+              +
+            </span>
+          </span>
         </button>
       </div>
 
@@ -600,7 +632,7 @@ export function Sidebar() {
             >
               {showDailyNotes ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </span>
-            <Calendar size={16} style={{ color: "var(--color-accent)" }} />
+            <Calendar size={16} style={{ color: "var(--color-text-secondary)" }} />
             <span className="font-medium">Daily Notes</span>
             <span
               className="ml-auto text-xs"
@@ -742,28 +774,19 @@ export function Sidebar() {
         />
       )}
 
-      {/* Footer / Settings */}
-      <div
-        className="flex-shrink-0 border-t p-2"
-        style={{ borderColor: "var(--color-border)" }}
-      >
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => openSettings()}
-            className="flex flex-1 cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors"
-            style={{ color: "var(--color-text-secondary)" }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.backgroundColor = "var(--color-bg-hover)")
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.backgroundColor = "transparent")
-            }
-          >
-            <Settings size={16} />
-            Settings
-          </button>
-        </div>
-      </div>
+      {/* New Board Modal */}
+      {showNewBoardModal && (
+        <NewBoardModal
+          folders={filteredFolderTree}
+          boardsByFolder={boardsByFolder}
+          onSelect={async (folderId, folderName) => {
+            setShowNewBoardModal(false);
+            const newBoard = await createBoard(folderId, `${folderName} Board`);
+            openTab({ type: "board", id: newBoard.board.id });
+          }}
+          onCancel={() => setShowNewBoardModal(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1810,6 +1833,135 @@ function DeleteFolderDialog({
             }}
           >
             Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// New Board Modal Component
+// ============================================================================
+
+interface NewBoardModalProps {
+  folders: FolderTreeNode[];
+  boardsByFolder: Record<string, Board>;
+  onSelect: (folderId: string, folderName: string) => void;
+  onCancel: () => void;
+}
+
+function NewBoardModal({ folders, boardsByFolder, onSelect, onCancel }: NewBoardModalProps) {
+  // Handle escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onCancel]);
+
+  // Flatten folders for display
+  const flattenFolders = (nodes: FolderTreeNode[], depth = 0): Array<{ folder: FolderTreeNode; depth: number }> => {
+    const result: Array<{ folder: FolderTreeNode; depth: number }> = [];
+    for (const node of nodes) {
+      result.push({ folder: node, depth });
+      result.push(...flattenFolders(node.children, depth + 1));
+    }
+    return result;
+  };
+
+  const flatFolders = flattenFolders(folders);
+  const availableFolders = flatFolders.filter(({ folder }) => !boardsByFolder[folder.id]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: "rgba(0, 0, 0, 0.5)" }}
+      onClick={onCancel}
+    >
+      <div
+        className="mx-4 w-full max-w-sm rounded-lg border shadow-xl"
+        style={{
+          backgroundColor: "var(--color-bg-primary)",
+          borderColor: "var(--color-border)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          className="border-b px-4 py-3"
+          style={{ borderColor: "var(--color-border)" }}
+        >
+          <h3
+            className="text-lg font-semibold"
+            style={{ color: "var(--color-text-primary)" }}
+          >
+            New Board
+          </h3>
+          <p
+            className="mt-1 text-sm"
+            style={{ color: "var(--color-text-tertiary)" }}
+          >
+            Select a folder to create a board for
+          </p>
+        </div>
+
+        {/* Folder List */}
+        <div className="max-h-64 overflow-y-auto p-2">
+          {availableFolders.length === 0 ? (
+            <div
+              className="py-8 text-center text-sm"
+              style={{ color: "var(--color-text-tertiary)" }}
+            >
+              {folders.length === 0 
+                ? "No folders yet. Create a folder first."
+                : "All folders already have boards."}
+            </div>
+          ) : (
+            availableFolders.map(({ folder, depth }) => (
+              <button
+                key={folder.id}
+                onClick={() => onSelect(folder.id, folder.name)}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors"
+                style={{
+                  paddingLeft: `${12 + depth * 16}px`,
+                  color: "var(--color-text-primary)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                }}
+              >
+                <FolderIcon size={16} style={{ color: "var(--color-text-secondary)" }} />
+                <span>{folder.name}</span>
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        <div
+          className="flex justify-end border-t px-4 py-3"
+          style={{ borderColor: "var(--color-border)" }}
+        >
+          <button
+            onClick={onCancel}
+            className="rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+            style={{
+              backgroundColor: "var(--color-bg-secondary)",
+              color: "var(--color-text-primary)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--color-bg-secondary)";
+            }}
+          >
+            Cancel
           </button>
         </div>
       </div>

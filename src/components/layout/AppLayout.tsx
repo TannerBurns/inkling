@@ -1,7 +1,9 @@
 import { ReactNode, useState, useCallback, useRef, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Settings, Network, Calendar } from "lucide-react";
 import { useChatStore } from "../../stores/chatStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useEditorGroupStore } from "../../stores/editorGroupStore";
 import { HeaderSearch } from "./HeaderSearch";
 import { AgentActivityIndicator } from "../shared/AgentActivityIndicator";
 
@@ -32,8 +34,11 @@ export function AppLayout({ sidebar, editor, rightSidebar }: AppLayoutProps) {
   
   const {
     isEditorToolbarVisible,
-    toggleEditorToolbar
+    toggleEditorToolbar,
+    openSettings
   } = useSettingsStore();
+  
+  const { openTab } = useEditorGroupStore();
   
   const [rightSidebarWidth, setRightSidebarWidth] = useState(() => {
     const saved = localStorage.getItem("inkling-right-sidebar-width");
@@ -159,10 +164,40 @@ export function AppLayout({ sidebar, editor, rightSidebar }: AppLayoutProps) {
           </div>
         </div>
 
-        {/* Right side - Agent activity & Panel toggles */}
+        {/* Right side - Graph, Agent activity, Panel toggles, Settings */}
         <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Calendar */}
+          <button
+            onClick={() => openTab({ type: "calendar", id: "main" })}
+            className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-tertiary)]"
+            style={{
+              color: "var(--color-text-tertiary)",
+            }}
+            title="Open Calendar (⌘⇧D)"
+          >
+            <Calendar className="h-4 w-4" />
+          </button>
+          
+          {/* Knowledge Graph */}
+          <button
+            onClick={() => openTab({ type: "graph", id: "main" })}
+            className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-tertiary)]"
+            style={{
+              color: "var(--color-text-tertiary)",
+            }}
+            title="Open Knowledge Graph (⌘G)"
+          >
+            <Network className="h-4 w-4" />
+          </button>
+          
           {/* Agent Activity Indicator */}
           <AgentActivityIndicator />
+          
+          {/* Separator */}
+          <div
+            className="mx-1 h-4 w-px"
+            style={{ backgroundColor: "var(--color-border)" }}
+          />
           
           {/* Left panel toggle */}
           <button
@@ -173,7 +208,7 @@ export function AppLayout({ sidebar, editor, rightSidebar }: AppLayoutProps) {
                 ? "var(--color-text-primary)"
                 : "var(--color-text-tertiary)",
             }}
-            title={isLeftPanelVisible ? "Hide left panel (⌘[)" : "Show left panel (⌘[)"}
+            title="Toggle Primary Side Bar (⌘[)"
           >
             <svg
               className="h-4 w-4"
@@ -205,7 +240,7 @@ export function AppLayout({ sidebar, editor, rightSidebar }: AppLayoutProps) {
                 ? "var(--color-text-primary)"
                 : "var(--color-text-tertiary)",
             }}
-            title={isEditorToolbarVisible ? "Hide formatting toolbar" : "Show formatting toolbar"}
+            title="Toggle Text Bar"
           >
             <svg
               className="h-4 w-4"
@@ -238,7 +273,7 @@ export function AppLayout({ sidebar, editor, rightSidebar }: AppLayoutProps) {
                   ? "var(--color-text-primary)"
                   : "var(--color-text-tertiary)",
               }}
-              title={isRightSidebarVisible ? "Hide right panel (⌘])" : "Show right panel (⌘])"}
+              title="Toggle AI Pane (⌘])"
             >
               <svg
                 className="h-4 w-4"
@@ -261,6 +296,24 @@ export function AppLayout({ sidebar, editor, rightSidebar }: AppLayoutProps) {
               </svg>
             </button>
           )}
+
+          {/* Separator */}
+          <div
+            className="mx-1 h-4 w-px"
+            style={{ backgroundColor: "var(--color-border)" }}
+          />
+
+          {/* Settings button */}
+          <button
+            onClick={() => openSettings()}
+            className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-tertiary)]"
+            style={{
+              color: "var(--color-text-tertiary)",
+            }}
+            title="Open Settings (⌘,)"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
         </div>
       </header>
 

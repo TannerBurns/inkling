@@ -327,3 +327,104 @@ export async function getAllDailyNotes(): Promise<Note[]> {
 export async function isDailyNote(noteId: string): Promise<boolean> {
   return invoke<boolean>("is_daily_note", { noteId });
 }
+
+// ============================================================================
+// Calendar Event Commands
+// ============================================================================
+
+import type {
+  CalendarEvent,
+  CalendarEventWithNote,
+  CreateCalendarEventInput,
+  UpdateCalendarEventInput,
+} from "../types/calendar";
+
+/**
+ * Create a new calendar event
+ */
+export async function createCalendarEvent(
+  input: CreateCalendarEventInput
+): Promise<CalendarEvent> {
+  return invoke<CalendarEvent>("create_calendar_event", { input });
+}
+
+/**
+ * Get a calendar event by ID
+ */
+export async function getCalendarEvent(id: string): Promise<CalendarEvent | null> {
+  return invoke<CalendarEvent | null>("get_calendar_event", { id });
+}
+
+/**
+ * Get a calendar event with linked note details
+ */
+export async function getCalendarEventWithNote(
+  id: string
+): Promise<CalendarEventWithNote | null> {
+  return invoke<CalendarEventWithNote | null>("get_calendar_event_with_note", { id });
+}
+
+/**
+ * Get all calendar events
+ */
+export async function getAllCalendarEvents(): Promise<CalendarEvent[]> {
+  return invoke<CalendarEvent[]>("get_all_calendar_events");
+}
+
+/**
+ * Get calendar events within a date range
+ * @param start - ISO datetime string
+ * @param end - ISO datetime string
+ */
+export async function getCalendarEventsInRange(
+  start: string,
+  end: string
+): Promise<CalendarEventWithNote[]> {
+  return invoke<CalendarEventWithNote[]>("get_calendar_events_in_range", { start, end });
+}
+
+/**
+ * Get calendar events for a specific date
+ * @param date - Date in YYYY-MM-DD format
+ */
+export async function getCalendarEventsForDate(
+  date: string
+): Promise<CalendarEventWithNote[]> {
+  return invoke<CalendarEventWithNote[]>("get_calendar_events_for_date", { date });
+}
+
+/**
+ * Update a calendar event
+ */
+export async function updateCalendarEvent(
+  id: string,
+  input: UpdateCalendarEventInput
+): Promise<CalendarEvent> {
+  return invoke<CalendarEvent>("update_calendar_event", { id, input });
+}
+
+/**
+ * Delete a calendar event
+ */
+export async function deleteCalendarEvent(id: string): Promise<boolean> {
+  return invoke<boolean>("delete_calendar_event", { id });
+}
+
+/**
+ * Link a note to a calendar event
+ */
+export async function linkNoteToCalendarEvent(
+  eventId: string,
+  noteId: string
+): Promise<CalendarEvent> {
+  return invoke<CalendarEvent>("link_note_to_calendar_event", { eventId, noteId });
+}
+
+/**
+ * Unlink a note from a calendar event
+ */
+export async function unlinkNoteFromCalendarEvent(
+  eventId: string
+): Promise<CalendarEvent> {
+  return invoke<CalendarEvent>("unlink_note_from_calendar_event", { eventId });
+}

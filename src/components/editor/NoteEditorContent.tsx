@@ -164,6 +164,7 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
   }, []);
 
   // Debounced save function with link syncing
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const debouncedSave = useCallback(
     debounce(
       async (
@@ -483,6 +484,7 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
       editor?.commands.setContent("");
       lastSyncedHtmlRef.current = "";
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNote?.id, editor]);
 
   // Attach click and context menu handlers

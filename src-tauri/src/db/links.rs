@@ -156,6 +156,30 @@ pub fn sync_links(
     Ok(())
 }
 
+/// Get all links in the database (for graph visualization)
+pub fn get_all_links(conn: &Connection) -> Result<Vec<NoteLink>, LinkDbError> {
+    let mut stmt = conn.prepare(
+        "SELECT nl.source_note_id, nl.target_note_id, nl.context
+         FROM note_links nl
+         JOIN notes n1 ON n1.id = nl.source_note_id
+         JOIN notes n2 ON n2.id = nl.target_note_id
+         WHERE n1.is_deleted = FALSE AND n2.is_deleted = FALSE",
+    )?;
+
+    let links = stmt
+        .query_map([], |row| {
+            Ok(NoteLink {
+                source_note_id: row.get(0)?,
+                target_note_id: row.get(1)?,
+                context: row.get(2)?,
+            })
+        })?
+        .filter_map(Result::ok)
+        .collect();
+
+    Ok(links)
+}
+
 /// Get link count for a note (both outgoing and incoming)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -10,15 +10,20 @@ import { useNoteStore } from "./stores/noteStore";
 import { useFolderStore } from "./stores/folderStore";
 import { useChatStore } from "./stores/chatStore";
 import { useVaultStore } from "./stores/vaultStore";
-import { useActiveTab } from "./stores/editorGroupStore";
+import { useSettingsStore } from "./stores/settingsStore";
+import { useDailyNotesStore } from "./stores/dailyNotesStore";
+import { useActiveTab, useEditorGroupStore } from "./stores/editorGroupStore";
 import { useRelatedNotes } from "./hooks/useRelatedNotes";
 import { useBacklinks } from "./hooks/useBacklinks";
 import { Loader2 } from "lucide-react";
 
 function App() {
-  const { fetchAllNotes } = useNoteStore();
+  const { fetchAllNotes, createNote } = useNoteStore();
   const { fetchFolders } = useFolderStore();
   const { toggleChat, toggleLeftPanel, toggleRightSidebar } = useChatStore();
+  const { openSettings } = useSettingsStore();
+  const { openTodayNote } = useDailyNotesStore();
+  const { openTab } = useEditorGroupStore();
   const {
     isConfigured,
     isLoading: vaultLoading,
@@ -58,7 +63,7 @@ function App() {
 
   // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
       // Cmd/Ctrl+Shift+C: Toggle between Notes and Chat mode
       if (
         (e.metaKey || e.ctrlKey) &&
@@ -78,11 +83,39 @@ function App() {
         e.preventDefault();
         toggleRightSidebar();
       }
+      // Cmd/Ctrl+N: New Note
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        const newNote = await createNote("Untitled", null);
+        if (newNote) {
+          openTab({ type: "note", id: newNote.id });
+        }
+      }
+      // Cmd/Ctrl+D: New Daily Note
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        openTodayNote();
+      }
+      // Cmd/Ctrl+,: Open Settings
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        openSettings();
+      }
+      // Cmd/Ctrl+G: Open Knowledge Graph
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        openTab({ type: "graph", id: "main" });
+      }
+      // Cmd/Ctrl+Shift+D: Open Calendar
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        openTab({ type: "calendar", id: "main" });
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggleChat, toggleLeftPanel, toggleRightSidebar]);
+  }, [toggleChat, toggleLeftPanel, toggleRightSidebar, createNote, openTab, openTodayNote, openSettings]);
 
   // Show loading state while checking vault status
   if (vaultLoading) {

@@ -26,6 +26,7 @@ pub fn run_migrations(conn: &Connection) -> Result<(), MigrationError> {
         ("004_embeddings", MIGRATION_004_EMBEDDINGS),
         ("005_conversations", MIGRATION_005_CONVERSATIONS),
         ("006_boards", MIGRATION_006_BOARDS),
+        ("007_calendar_events", MIGRATION_007_CALENDAR_EVENTS),
     ];
 
     for (name, sql) in migrations {
@@ -210,6 +211,32 @@ CREATE INDEX idx_board_cards_note_id ON board_cards(note_id);
 CREATE INDEX idx_board_cards_position ON board_cards(lane_id, position);
 "#;
 
+const MIGRATION_007_CALENDAR_EVENTS: &str = r#"
+-- Calendar events for scheduling and integration with notes
+CREATE TABLE calendar_events (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    start_time DATETIME NOT NULL,
+    end_time DATETIME,
+    all_day BOOLEAN DEFAULT FALSE,
+    recurrence_rule TEXT,
+    source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('manual', 'google')),
+    external_id TEXT,
+    linked_note_id TEXT REFERENCES notes(id) ON DELETE SET NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for calendar queries
+CREATE INDEX idx_calendar_events_start_time ON calendar_events(start_time);
+CREATE INDEX idx_calendar_events_end_time ON calendar_events(end_time);
+CREATE INDEX idx_calendar_events_source ON calendar_events(source);
+CREATE INDEX idx_calendar_events_external_id ON calendar_events(external_id);
+CREATE INDEX idx_calendar_events_linked_note ON calendar_events(linked_note_id);
+CREATE INDEX idx_calendar_events_date_range ON calendar_events(start_time, end_time);
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,6 +269,7 @@ mod tests {
         assert!(tables.contains(&"boards".to_string()));
         assert!(tables.contains(&"board_lanes".to_string()));
         assert!(tables.contains(&"board_cards".to_string()));
+        assert!(tables.contains(&"calendar_events".to_string()));
     }
 
     #[test]

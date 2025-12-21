@@ -99,3 +99,19 @@ export type {
   MoveCardInput,
   BoardWithDetails,
 } from './board';
+
+export type {
+  CalendarEventSource,
+  CalendarEvent,
+  CalendarEventWithNote,
+  CreateCalendarEventInput,
+  UpdateCalendarEventInput,
+  CalendarViewType,
+  RecurrenceFrequency,
+} from './calendar';
+
+export {
+  parseRecurrenceRule,
+  generateRecurrenceRule,
+  getFrequencyFromRule,
+} from './calendar';

@@ -385,3 +385,78 @@ pub enum ChatStreamEvent {
     #[serde(rename = "error")]
     Error { message: String },
 }
+
+// ============================================================================
+// Calendar Event Models
+// ============================================================================
+
+/// Source of a calendar event
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum CalendarEventSource {
+    Manual,
+    Google,
+}
+
+impl CalendarEventSource {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "manual" => Some(CalendarEventSource::Manual),
+            "google" => Some(CalendarEventSource::Google),
+            _ => None,
+        }
+    }
+}
+
+/// A calendar event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarEvent {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub start_time: DateTime<Utc>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub all_day: bool,
+    pub recurrence_rule: Option<String>,
+    pub source: CalendarEventSource,
+    pub external_id: Option<String>,
+    pub linked_note_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Input for creating a new calendar event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateCalendarEventInput {
+    pub title: String,
+    pub description: Option<String>,
+    pub start_time: DateTime<Utc>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub all_day: bool,
+    pub recurrence_rule: Option<String>,
+    pub linked_note_id: Option<String>,
+}
+
+/// Input for updating a calendar event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCalendarEventInput {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub start_time: Option<DateTime<Utc>>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub all_day: Option<bool>,
+    pub recurrence_rule: Option<String>,
+    pub linked_note_id: Option<String>,
+}
+
+/// A calendar event with linked note details
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarEventWithNote {
+    #[serde(flatten)]
+    pub event: CalendarEvent,
+    pub linked_note_title: Option<String>,
+}
