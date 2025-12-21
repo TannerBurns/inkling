@@ -44,7 +44,7 @@ export function SearchResults({
         className="py-8 text-center text-sm"
         style={{ color: "var(--color-text-tertiary)" }}
       >
-        No results found for "{query}"
+        No results found for &quot;{query}&quot;
       </div>
     );
   }

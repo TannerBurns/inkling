@@ -6,6 +6,8 @@
 //! Tools follow the OpenAI function calling format and can be composed
 //! into different agent configurations.
 
+#![allow(dead_code)]
+
 pub mod append_to_note;
 pub mod read_attachment;
 pub mod search_notes;

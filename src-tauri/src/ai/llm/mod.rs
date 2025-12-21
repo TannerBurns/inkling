@@ -10,6 +10,8 @@
 //! - Native tool calling
 //! - Reasoning/thinking token streaming
 
+#![allow(dead_code)]
+
 mod types;
 mod openai;
 mod anthropic;

@@ -2,6 +2,8 @@
 //!
 //! Generic key-value settings storage using the settings table.
 
+#![allow(dead_code)]
+
 use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 

@@ -100,7 +100,7 @@ export function NoteList() {
             <div>
               <p className="font-medium">No notes yet</p>
               <p className="mt-1 text-sm">
-                Click "New Note" to create your first note
+                Click &quot;New Note&quot; to create your first note
               </p>
             </div>
           </div>

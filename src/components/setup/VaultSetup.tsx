@@ -658,7 +658,7 @@ function CompleteStep({ vaultPath }: CompleteStepProps) {
         className="mb-2 text-xl font-bold"
         style={{ color: "var(--color-text-primary)" }}
       >
-        You're All Set!
+        You&apos;re All Set!
       </h2>
 
       <p

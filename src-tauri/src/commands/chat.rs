@@ -155,10 +155,10 @@ pub async fn get_conversation_messages(
 }
 
 // ============================================================================
-// Chat / Messaging
+// Chat / Messaging - Legacy types (kept for potential fallback/migration)
 // ============================================================================
 
-/// Request body for chat completions
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 struct ChatCompletionRequest {
     model: String,
@@ -168,13 +168,14 @@ struct ChatCompletionRequest {
     max_tokens: Option<u32>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize)]
 struct ChatMessageBody {
     role: String,
     content: String,
 }
 
-/// Response from chat completions API
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct ChatCompletionResponse {
     id: String,
@@ -182,18 +183,21 @@ struct ChatCompletionResponse {
     usage: Option<UsageInfo>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct ChatChoice {
     message: ChatMessageContent,
     finish_reason: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct ChatMessageContent {
     role: String,
     content: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct UsageInfo {
     prompt_tokens: u32,
@@ -201,12 +205,13 @@ struct UsageInfo {
     total_tokens: u32,
 }
 
-/// Streaming response chunk
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct StreamChunk {
     choices: Vec<StreamChoice>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct StreamChoice {
     delta: StreamDelta,
@@ -214,6 +219,7 @@ struct StreamChoice {
     finish_reason: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct StreamDelta {
     content: Option<String>,
@@ -359,7 +365,7 @@ pub async fn send_chat_message(
     let mut was_cancelled = false;
 
     // Create cancellation channel and register in active streams
-    let (cancel_tx, mut cancel_rx) = watch::channel(false);
+    let (cancel_tx, cancel_rx) = watch::channel(false);
     {
         let mut streams = active_streams.0.write().map_err(|e| format!("Lock error: {}", e))?;
         streams.insert(stream_key.clone(), cancel_tx);
@@ -822,7 +828,7 @@ pub async fn edit_message_and_regenerate(
     let mut was_cancelled = false;
 
     // Create cancellation channel and register in active streams
-    let (cancel_tx, mut cancel_rx) = watch::channel(false);
+    let (cancel_tx, cancel_rx) = watch::channel(false);
     {
         let mut streams = active_streams.0.write().map_err(|e| format!("Lock error: {}", e))?;
         streams.insert(stream_key.clone(), cancel_tx);
@@ -963,6 +969,7 @@ pub async fn stop_generation(
 // ============================================================================
 
 /// Get the chat model from AI config
+#[allow(dead_code)]
 fn get_chat_model(config: &crate::ai::AIConfig) -> Result<String, String> {
     // Find the default provider or first enabled provider
     let provider = if let Some(ref default_id) = config.default_provider {

@@ -1,10 +1,7 @@
-use std::sync::Arc;
-
 use tauri::State;
 
 use crate::db::notes as db;
 use crate::models::{CreateNoteInput, Note, UpdateNoteInput};
-use crate::search::SearchIndex;
 use crate::vault::sync as vault_sync;
 use crate::{AppPool, AppSearchIndex};
 
@@ -143,7 +140,6 @@ fn delete_old_note_file(
     old_title: &str,
     old_folder_id: Option<&str>,
 ) -> Result<(), String> {
-    use crate::db::folders;
     use crate::vault::{config as vault_config, markdown};
     
     let notes_dir = vault_config::get_notes_dir().map_err(|e| e.to_string())?;

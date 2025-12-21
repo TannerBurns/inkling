@@ -2,11 +2,12 @@
 //!
 //! Handles syncing notes between Markdown files and the SQLite database.
 
+#![allow(dead_code)]
+
 use crate::db::connection::DbPool;
 use crate::db::{folders, notes};
 use crate::models::{CreateNoteInput, Note, UpdateNoteInput};
 use crate::vault::{config, markdown};
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -221,7 +222,7 @@ pub fn handle_file_modified(pool: &DbPool, file_path: &Path) -> Result<Option<No
 }
 
 /// Handle a file deletion event
-pub fn handle_file_deleted(pool: &DbPool, file_path: &Path) -> Result<bool, SyncError> {
+pub fn handle_file_deleted(_pool: &DbPool, file_path: &Path) -> Result<bool, SyncError> {
     // We need to find the note by its file path
     // This requires reading the frontmatter before deletion, which we can't do
     // Instead, we'll need to maintain a mapping or use the title from the filename

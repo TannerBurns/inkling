@@ -4,6 +4,8 @@
 //! with function calling (tools). Agents implement the ToolExecutor trait
 //! to provide their specific tools.
 
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

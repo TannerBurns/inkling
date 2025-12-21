@@ -3,6 +3,8 @@
 //! Provides commands for executing the inline assistant, summarization agent,
 //! research agent, and managing agent configuration.
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
 use tauri::{Emitter, State};

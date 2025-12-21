@@ -1176,7 +1176,7 @@ function ProviderCard({
                     className="text-xs"
                     style={{ color: "var(--color-text-tertiary)" }}
                   >
-                    Click "Detect Models" to find available embedding models
+                    Click &quot;Detect Models&quot; to find available embedding models
                   </p>
                 </div>
               )}
@@ -1539,7 +1539,7 @@ function EmbeddingStatusBar({ config, onAutoEmbedChange, onModelsLoaded }: Embed
         className="mt-2 text-xs"
         style={{ color: "var(--color-text-tertiary)" }}
       >
-        Enable "Use for Embeddings" on a provider below to change embedding source.
+        Enable &quot;Use for Embeddings&quot; on a provider below to change embedding source.
       </p>
     </div>
   );

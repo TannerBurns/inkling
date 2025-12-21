@@ -2,6 +2,10 @@
 //!
 //! Handles queuing notes for embedding generation with debouncing
 //! to avoid processing notes that are still being edited.
+//!
+//! NOTE: This module is planned for future use with async embedding updates.
+
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::sync::Arc;

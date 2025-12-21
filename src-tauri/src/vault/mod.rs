@@ -10,6 +10,3 @@ pub mod watcher;
 
 pub use board_sync::*;
 pub use config::*;
-pub use markdown::*;
-pub use sync::*;
-pub use watcher::*;

@@ -3,6 +3,8 @@
 //! Stores note embeddings as BLOBs and uses sqlite-vec functions
 //! for efficient similarity search.
 
+#![allow(dead_code)]
+
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -310,7 +312,7 @@ pub struct EmbeddingStats {
 
 pub fn get_embedding_stats(
     conn: &Connection,
-    current_model: &str,
+    _current_model: &str,
 ) -> Result<EmbeddingStats, EmbeddingDbError> {
     let total_notes: u32 = conn.query_row(
         "SELECT COUNT(*) FROM notes WHERE is_deleted = FALSE",

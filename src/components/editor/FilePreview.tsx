@@ -55,7 +55,7 @@ export function FilePreview({ src, filename, fileType, fileSize }: FilePreviewPr
  */
 function PDFPreview({ src, filename, fileSize }: { src: string; filename: string; fileSize?: number }) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, _setError] = useState(false);
 
   if (error) {
     return (
@@ -106,7 +106,6 @@ function PDFPreview({ src, filename, fileSize }: { src: string; filename: string
             data={src}
             type="application/pdf"
             className="pdf-viewer"
-            onError={() => setError(true)}
           >
             <p className="pdf-fallback">
               Unable to display PDF.{" "}

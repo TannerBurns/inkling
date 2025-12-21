@@ -13,9 +13,7 @@ export interface NoteMentionListRef {
   onKeyDown: (props: SuggestionKeyDownProps) => boolean;
 }
 
-interface NoteMentionListProps extends SuggestionProps {
-  // The query comes from SuggestionProps
-}
+type NoteMentionListProps = SuggestionProps;
 
 /**
  * Autocomplete dropdown for wiki-style [[note]] links

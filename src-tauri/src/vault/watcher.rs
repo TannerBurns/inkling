@@ -2,9 +2,11 @@
 //!
 //! Uses the `notify` crate to watch for file changes in the vault.
 
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+#![allow(dead_code)]
+
+use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, DebouncedEvent, Debouncer};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;

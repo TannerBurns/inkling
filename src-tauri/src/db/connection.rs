@@ -1,3 +1,7 @@
+//! Database connection pool management
+
+#![allow(dead_code)]
+
 use directories::ProjectDirs;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;

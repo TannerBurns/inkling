@@ -3,6 +3,10 @@
 //! An AI agent that helps users research, create content, and generate visuals
 //! directly within their notes. Uses tools like web search, image fetching,
 //! and diagram generation.
+//!
+//! NOTE: This module is being integrated via the agent command system.
+
+#![allow(dead_code)]
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

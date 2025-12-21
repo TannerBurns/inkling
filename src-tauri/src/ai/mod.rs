@@ -12,10 +12,9 @@ pub mod tools;
 
 pub use agent::*;
 pub use config::*;
-pub use embed_queue::*;
 pub use embeddings::*;
 pub use inline_assistant::*;
-pub use llm::{create_client, LlmClient, LlmError};
+pub use llm::create_client;
 pub use rag::*;
 pub use research_agent::*;
 pub use summarization_agent::*;

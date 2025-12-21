@@ -1,5 +1,7 @@
 //! Tauri commands for tag operations and the tagging agent
 
+#![allow(dead_code)]
+
 use tauri::State;
 
 use crate::ai::{load_ai_config, run_tagging_agent, TaggingResult};

@@ -2,10 +2,12 @@
 //!
 //! Syncs board data to/from .board.json files in folder directories.
 
+#![allow(dead_code)]
+
 use crate::db::boards;
 use crate::db::connection::DbPool;
 use crate::db::folders;
-use crate::models::{AddCardInput, CreateBoardInput, CreateLaneInput};
+use crate::models::AddCardInput;
 use crate::vault::config;
 use serde::{Deserialize, Serialize};
 use std::fs;

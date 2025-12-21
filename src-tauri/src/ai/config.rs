@@ -3,6 +3,8 @@
 //! Handles storage and retrieval of AI provider settings,
 //! including API keys, endpoints, and model configurations.
 
+#![allow(dead_code)]
+
 use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 use serde::{Deserialize, Serialize};

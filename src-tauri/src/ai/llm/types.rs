@@ -2,6 +2,8 @@
 //!
 //! These types provide a unified interface across all LLM providers.
 
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;

@@ -2,6 +2,8 @@
 //!
 //! Provides CRUD operations for tags and note-tag associations.
 
+#![allow(dead_code)]
+
 use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 use uuid::Uuid;

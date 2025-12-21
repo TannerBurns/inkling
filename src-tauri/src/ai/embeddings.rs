@@ -1,6 +1,10 @@
 //! Embedding generation for AI providers
 //!
 //! Supports both local (Ollama/LM Studio) and cloud (OpenAI) embeddings.
+//!
+//! NOTE: Contains utility functions for future embedding features.
+
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

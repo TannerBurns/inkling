@@ -1724,7 +1724,7 @@ function DeleteFolderDialog({
           className="mb-3 text-sm"
           style={{ color: "var(--color-text-secondary)" }}
         >
-          Are you sure you want to delete "<strong>{folderName}</strong>"?
+          Are you sure you want to delete &quot;<strong>{folderName}</strong>&quot;?
         </p>
         
         {hasContent && (

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use tauri::State;
 
 use crate::db::folders as folders_db;

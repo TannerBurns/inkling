@@ -241,9 +241,9 @@ export function DailyNotesSettings() {
           className="list-inside list-disc space-y-1 text-xs"
           style={{ color: "var(--color-text-tertiary)" }}
         >
-          <li>Click the calendar icon in the sidebar to open today's note</li>
+          <li>Click the calendar icon in the sidebar to open today&apos;s note</li>
           <li>Use the navigation arrows in the editor to move between daily notes</li>
-          <li>Daily notes are stored in the "Daily Notes" folder</li>
+          <li>Daily notes are stored in the &quot;Daily Notes&quot; folder</li>
           <li>The note title is automatically set to the date (YYYY-MM-DD)</li>
         </ul>
       </div>

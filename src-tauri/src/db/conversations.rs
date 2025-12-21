@@ -2,14 +2,15 @@
 //!
 //! Handles CRUD operations for chat conversations, messages, and message context.
 
+#![allow(dead_code)]
+
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 use uuid::Uuid;
 
 use crate::models::{
-    Citation, Conversation, ContextItem, Message, MessageContext, MessageMetadata, MessageRole,
-    TokenUsage,
+    Conversation, ContextItem, Message, MessageContext, MessageMetadata, MessageRole,
 };
 
 #[derive(Error, Debug)]

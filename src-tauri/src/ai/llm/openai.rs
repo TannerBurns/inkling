@@ -7,6 +7,8 @@
 //! - VLLM
 //! - Any OpenAI-compatible endpoint
 
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Client;

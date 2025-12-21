@@ -74,7 +74,7 @@ export function AssistantSettings() {
           style={{ color: "var(--color-text-tertiary)" }}
         >
           This prompt defines how the Inkling assistant behaves. It is included
-          at the start of every conversation to guide the AI's responses.
+          at the start of every conversation to guide the AI&apos;s responses.
         </p>
 
         {isLoading ? (

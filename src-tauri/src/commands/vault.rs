@@ -1,9 +1,8 @@
 //! Vault management commands
 
 use std::path::PathBuf;
-use tauri::State;
 
-use crate::vault::{self, VaultError, VaultInfo, VaultStatus};
+use crate::vault::{self, VaultInfo, VaultStatus};
 
 /// Get the current vault path
 #[tauri::command]
@@ -60,7 +59,7 @@ pub fn has_existing_data() -> bool {
 #[tauri::command]
 pub fn migrate_to_vault(vault_path: String) -> Result<(), String> {
     use crate::db;
-    use crate::vault::{markdown, sync};
+    use crate::vault::markdown;
     use std::fs;
     
     let vault_path = PathBuf::from(&vault_path);
@@ -328,7 +327,7 @@ pub struct SyncResult {
 /// Sync all notes and folders from database to filesystem
 #[tauri::command]
 pub fn sync_vault_to_disk(pool: tauri::State<crate::AppPool>) -> Result<SyncResult, String> {
-    use crate::db::{folders, notes};
+    use crate::db::folders;
     use crate::vault::sync as vault_sync;
     use std::fs;
     

@@ -7,6 +7,8 @@
 //! - PowerPoint presentations (pptx)
 //! - Plain text and code files
 
+#![allow(dead_code)]
+
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;

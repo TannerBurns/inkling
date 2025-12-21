@@ -239,7 +239,7 @@ export function NoteTags({ noteId }: NoteTagsProps) {
             >
               <div className="border-b px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
                 <div className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>
-                  Choose color for "{inputValue.trim()}"
+                  Choose color for &quot;{inputValue.trim()}&quot;
                 </div>
               </div>
               <div className="grid grid-cols-4 gap-2 p-3">
@@ -311,7 +311,7 @@ export function NoteTags({ noteId }: NoteTagsProps) {
                   onMouseEnter={() => setSelectedSuggestionIndex(suggestions.length)}
                 >
                   <Plus size={14} />
-                  <span>Create "{inputValue.trim()}"</span>
+                  <span>Create &quot;{inputValue.trim()}&quot;</span>
                 </button>
               )}
             </div>
@@ -335,7 +335,7 @@ export function NoteTags({ noteId }: NoteTagsProps) {
                 onClick={() => setShowColorPicker(true)}
               >
                 <Plus size={14} />
-                <span>Create "{inputValue.trim()}"</span>
+                <span>Create &quot;{inputValue.trim()}&quot;</span>
               </button>
             </div>
           )}

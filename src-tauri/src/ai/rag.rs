@@ -2,6 +2,10 @@
 //!
 //! Combines explicit user-attached context with auto-retrieved semantically similar notes
 //! to build prompts for the LLM.
+//!
+//! NOTE: Contains utilities for future RAG enhancements.
+
+#![allow(dead_code)]
 
 use crate::db::{self, embeddings::search_similar, connection::DbPool};
 use crate::models::{Citation, ContextItem};
@@ -9,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use thiserror::Error;
 
-use super::{generate_embedding, load_ai_config};
+use super::load_ai_config;
 
 #[derive(Error, Debug)]
 pub enum RagError {

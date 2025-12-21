@@ -13,7 +13,6 @@ use tokio::sync::watch;
 use ai::init_ai_config;
 use db::connection::{self, DbPool};
 use search::SearchIndex;
-use tauri::Manager;
 
 /// Wrapper for optional pool that can be initialized after vault setup
 pub struct AppPool(pub RwLock<Option<DbPool>>);

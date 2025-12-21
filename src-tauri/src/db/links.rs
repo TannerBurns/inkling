@@ -3,7 +3,9 @@
 //! Manages the `note_links` table that tracks connections between notes
 //! created via `[[note]]` syntax.
 
-use rusqlite::{params, Connection, OptionalExtension};
+#![allow(dead_code)]
+
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

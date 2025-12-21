@@ -5,6 +5,8 @@
 //! - Native tool calling
 //! - Streaming with thinking and content blocks
 
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -14,7 +16,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use super::{
-    ChatMessage, ChatRequest, ChatResponse, EmbedInput, EmbedRequest, EmbedResponse,
+    ChatMessage, ChatRequest, ChatResponse, EmbedRequest, EmbedResponse,
     FunctionCall, LlmClient, LlmError, MessageRole, StreamEvent, TokenUsage, ToolCall,
     ToolDefinition,
 };
@@ -297,7 +299,7 @@ impl LlmClient for AnthropicClient {
             let mut stream = stream;
             let mut buffer = String::new();
             let mut current_tool_id = String::new();
-            let mut current_tool_name = String::new();
+            let mut _current_tool_name = String::new();
 
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
@@ -327,7 +329,7 @@ impl LlmClient for AnthropicClient {
                                                         ..
                                                     } => {
                                                         current_tool_id = id.clone();
-                                                        current_tool_name = name.clone();
+                                                        _current_tool_name = name.clone();
                                                         let _ = tx
                                                             .send(StreamEvent::ToolCallStart {
                                                                 id,

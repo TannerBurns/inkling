@@ -3,6 +3,8 @@
 //! Handles storing and retrieving the vault path, as well as creating
 //! new vault structures.
 
+#![allow(dead_code)]
+
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;

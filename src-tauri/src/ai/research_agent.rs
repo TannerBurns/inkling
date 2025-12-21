@@ -4,6 +4,8 @@
 //! Gathers information from notes, web searches, and synthesizes findings
 //! into comprehensive research notes streamed in real-time.
 
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

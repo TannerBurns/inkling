@@ -149,7 +149,7 @@ function BacklinkItem({ backlink, onClick }: BacklinkItemProps) {
           className="line-clamp-2 pl-6 text-xs"
           style={{ color: "var(--color-text-secondary)" }}
         >
-          "{backlink.context}"
+          &quot;{backlink.context}&quot;
         </p>
       )}
     </button>

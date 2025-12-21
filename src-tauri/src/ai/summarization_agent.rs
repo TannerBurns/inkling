@@ -3,14 +3,16 @@
 //! An AI agent focused on summarizing content from selected text or attachments.
 //! Produces concise, structured summaries and streams them to the note in real-time.
 
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::sync::Arc;
 use tauri::AppHandle;
 
 use super::agent::{
-    run_agent_with_events, AgentError, AgentResult, CancellationToken, ToolDefinition, ToolExecutor,
+    run_agent_with_events, AgentError, CancellationToken, ToolDefinition, ToolExecutor,
 };
 use super::config::AIProvider;
 use super::tools::{
