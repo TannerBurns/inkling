@@ -15,7 +15,6 @@ use crate::models::{
     TokenUsage, UpdateConversationInput,
 };
 use crate::{ActiveStreams, AppPool};
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
 
@@ -152,83 +151,6 @@ pub async fn get_conversation_messages(
 
     db::get_conversation_messages_paginated(&conn, &conversation_id, limit, offset)
         .map_err(|e| format!("Failed to get messages: {}", e))
-}
-
-// ============================================================================
-// Chat / Messaging - Legacy types (kept for potential fallback/migration)
-// ============================================================================
-
-#[allow(dead_code)]
-#[derive(Debug, Serialize)]
-struct ChatCompletionRequest {
-    model: String,
-    messages: Vec<ChatMessageBody>,
-    stream: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_tokens: Option<u32>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Serialize)]
-struct ChatMessageBody {
-    role: String,
-    content: String,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct ChatCompletionResponse {
-    id: String,
-    choices: Vec<ChatChoice>,
-    usage: Option<UsageInfo>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct ChatChoice {
-    message: ChatMessageContent,
-    finish_reason: Option<String>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct ChatMessageContent {
-    role: String,
-    content: String,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct UsageInfo {
-    prompt_tokens: u32,
-    completion_tokens: u32,
-    total_tokens: u32,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct StreamChunk {
-    choices: Vec<StreamChoice>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct StreamChoice {
-    delta: StreamDelta,
-    #[serde(default)]
-    finish_reason: Option<String>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-struct StreamDelta {
-    content: Option<String>,
-    /// OpenAI reasoning content (o1, o3, etc.)
-    #[serde(default)]
-    reasoning_content: Option<String>,
-    /// Anthropic thinking content (Claude 3.7+)
-    #[serde(default)]
-    thinking: Option<String>,
 }
 
 /// Send a chat message and get a response
@@ -966,83 +888,6 @@ pub async fn stop_generation(
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/// Get the chat model from AI config
-#[allow(dead_code)]
-fn get_chat_model(config: &crate::ai::AIConfig) -> Result<String, String> {
-    // Find the default provider or first enabled provider
-    let provider = if let Some(ref default_id) = config.default_provider {
-        config
-            .providers
-            .iter()
-            .find(|p| &p.id == default_id && p.is_enabled)
-    } else {
-        config.providers.iter().find(|p| p.is_enabled)
-    };
-
-    let provider = provider.ok_or_else(|| {
-        "No AI provider configured. Please set up a provider in Settings.".to_string()
-    })?;
-
-    // Get the selected model or first available
-    let model = provider
-        .selected_model
-        .clone()
-        .or_else(|| provider.models.first().cloned())
-        .ok_or_else(|| format!("No model available for provider {}", provider.name))?;
-
-    // For local providers (Ollama, LM Studio), the model name might contain "/"
-    // as part of the actual model identifier (e.g., "openai/gpt-oss-120b" from LM Studio)
-    // We need to preserve this and just prepend our routing prefix
-    match provider.provider_type {
-        crate::ai::ProviderType::Ollama => {
-            // Ollama models: use ollama/model-name format
-            // Model names from Ollama don't typically have prefixes
-            if model.starts_with("ollama/") {
-                Ok(model)
-            } else {
-                Ok(format!("ollama/{}", model))
-            }
-        }
-        crate::ai::ProviderType::LMStudio => {
-            // LM Studio uses OpenAI-compatible API
-            if model.starts_with("lmstudio/") {
-                Ok(model)
-            } else {
-                Ok(format!("lmstudio/{}", model))
-            }
-        }
-        crate::ai::ProviderType::VLLM => {
-            // VLLM uses OpenAI-compatible API
-            if model.starts_with("vllm/") {
-                Ok(model)
-            } else {
-                Ok(format!("vllm/{}", model))
-            }
-        }
-        crate::ai::ProviderType::OpenAI => {
-            // For OpenAI, strip any wrong prefix and use openai/
-            let model_name = model.clone();
-            Ok(format!("openai/{}", model_name))
-        }
-        crate::ai::ProviderType::Anthropic => {
-            let model_name = model.clone();
-            Ok(format!("anthropic/{}", model_name))
-        }
-        crate::ai::ProviderType::Google => {
-            let model_name = model.clone();
-            Ok(format!("google/{}", model_name))
-        }
-        crate::ai::ProviderType::Custom => {
-            // Custom providers route through OpenAI
-            if model.starts_with("openai/") {
-                Ok(model)
-            } else {
-                Ok(format!("openai/{}", model))
-            }
-        }
-    }
-}
 
 /// Get the chat model and provider from AI config
 fn get_chat_model_and_provider(config: &crate::ai::AIConfig) -> Result<(String, crate::ai::AIProvider), String> {

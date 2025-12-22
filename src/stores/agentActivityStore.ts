@@ -2,9 +2,11 @@ import { create } from "zustand";
 
 export interface RunningAgent {
   id: string;
-  type: "tagging" | "inline" | "embedding" | "summarization" | "research";
+  type: "tagging" | "inline" | "embedding" | "summarization" | "research" | "export";
   noteId?: string;
   noteTitle?: string;
+  /** For export agents, describes what's being exported */
+  description?: string;
   startedAt: number;
 }
 
@@ -14,6 +16,7 @@ interface AgentActivityState {
   // Actions
   startAgent: (agent: Omit<RunningAgent, "startedAt">) => void;
   stopAgent: (id: string) => void;
+  updateAgentDescription: (id: string, description: string) => void;
   clearAll: () => void;
   
   // Selectors
@@ -36,6 +39,14 @@ export const useAgentActivityStore = create<AgentActivityState>((set, get) => ({
   stopAgent: (id) => {
     set((state) => ({
       runningAgents: state.runningAgents.filter((a) => a.id !== id),
+    }));
+  },
+
+  updateAgentDescription: (id, description) => {
+    set((state) => ({
+      runningAgents: state.runningAgents.map((a) =>
+        a.id === id ? { ...a, description } : a
+      ),
     }));
   },
 

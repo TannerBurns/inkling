@@ -1,9 +1,9 @@
 import { create } from "zustand";
 
-// Tab type (shared between notes, boards, graph, and calendar)
+// Tab type (shared between notes, boards, graph, calendar, and exports)
 export type TabItem = {
-  type: "note" | "board" | "graph" | "calendar";
-  id: string; // noteId, boardId, or "main" for graph/calendar
+  type: "note" | "board" | "graph" | "calendar" | "exports";
+  id: string; // noteId, boardId, or "main" for graph/calendar/exports
 };
 
 // Editor group (one pane)
@@ -19,7 +19,7 @@ export const getTabKey = (tab: TabItem): string => `${tab.type}:${tab.id}`;
 // Helper to parse a tab key back to TabItem
 export const parseTabKey = (key: string): TabItem | null => {
   const [type, id] = key.split(":");
-  if ((type === "note" || type === "board" || type === "graph" || type === "calendar") && id) {
+  if ((type === "note" || type === "board" || type === "graph" || type === "calendar" || type === "exports") && id) {
     return { type, id };
   }
   return null;

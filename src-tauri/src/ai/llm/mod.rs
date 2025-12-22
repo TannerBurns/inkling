@@ -136,6 +136,7 @@ pub fn create_client_for_provider(
         is_enabled: true,
         models: Vec::new(),
         selected_model: None,
+        context_length: None,
     };
     create_client(&provider)
 }
@@ -155,6 +156,7 @@ mod tests {
             is_enabled: true,
             models: vec!["gpt-4o".to_string()],
             selected_model: Some("gpt-4o".to_string()),
+            context_length: None,
         };
 
         let client = create_client(&provider);
@@ -173,6 +175,7 @@ mod tests {
             is_enabled: true,
             models: vec!["llama3".to_string()],
             selected_model: Some("llama3".to_string()),
+            context_length: None,
         };
 
         let client = create_client(&provider);
@@ -192,10 +195,15 @@ mod tests {
             is_enabled: true,
             models: Vec::new(),
             selected_model: None,
+            context_length: None,
         };
 
         let result = create_client(&provider);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), LlmError::MissingApiKey));
+        match result {
+            Err(LlmError::MissingApiKey) => (),
+            Err(other) => panic!("Expected MissingApiKey error, got: {:?}", other),
+            Ok(_) => panic!("Expected error, got Ok"),
+        }
     }
 }

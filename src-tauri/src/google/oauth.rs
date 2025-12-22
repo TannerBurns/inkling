@@ -70,8 +70,6 @@ struct TokenResponse {
     access_token: String,
     refresh_token: Option<String>,
     expires_in: Option<u64>,
-    #[allow(dead_code)]
-    token_type: String,
 }
 
 /// User info response from Google
@@ -427,62 +425,6 @@ pub async fn initiate_auth_with_pool(pool: &DbPool) -> Result<GoogleAccount, Goo
     Ok(account)
 }
 
-/// Initiate the Google OAuth flow (deprecated - use initiate_auth_with_pool)
-#[allow(dead_code)]
-pub async fn initiate_auth(conn: &Connection) -> Result<GoogleAccount, GoogleAuthError> {
-    let client_id = get_client_id_with_db(conn)?;
-    let client_secret = get_client_secret_with_db(conn)?;
-    
-    // Generate PKCE values
-    let code_verifier = generate_code_verifier();
-    let code_challenge = generate_code_challenge(&code_verifier);
-    let state = generate_code_verifier(); // Use random value for state
-    
-    // Start callback server
-    let (rx, port) = start_callback_server(state.clone())?;
-    
-    // Build and open the auth URL
-    let auth_url = build_auth_url(&client_id, &code_challenge, &state, port);
-    
-    // Open the URL in the default browser
-    if let Err(e) = open::that(&auth_url) {
-        log::warn!("Failed to open browser: {}", e);
-    }
-    
-    // Wait for the callback (with timeout)
-    let code = rx
-        .recv_timeout(Duration::from_secs(300)) // 5 minute timeout
-        .map_err(|_| GoogleAuthError::Timeout)?
-        .map_err(GoogleAuthError::OAuthError)?;
-    
-    // Exchange code for tokens
-    let redirect_uri = get_redirect_uri(port);
-    let tokens = exchange_code_for_tokens(&client_id, &client_secret, &code, &code_verifier, &redirect_uri).await?;
-    
-    // Get user info
-    let user_info = get_user_info(&tokens.access_token).await?;
-    
-    // Calculate token expiry
-    let expires_at = tokens.expires_in.map(|secs| {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64
-            + secs as i64
-    });
-    
-    // Save to database
-    let account = save_account(
-        conn,
-        &user_info.email,
-        &tokens.access_token,
-        &tokens.refresh_token.unwrap_or_default(),
-        expires_at,
-    )?;
-    
-    Ok(account)
-}
-
 /// Save Google account to database
 fn save_account(
     conn: &Connection,
@@ -603,62 +545,6 @@ pub async fn refresh_token_if_needed_with_pool(pool: &DbPool) -> Result<String, 
             rusqlite::params![tokens.access_token, expires_at],
         )?;
     }
-    
-    Ok(tokens.access_token)
-}
-
-/// Refresh the access token if it's expired or about to expire (deprecated)
-#[allow(dead_code)]
-pub async fn refresh_token_if_needed(conn: &Connection) -> Result<String, GoogleAuthError> {
-    let account = get_connection_status(conn)?.ok_or(GoogleAuthError::NotConnected)?;
-    
-    // Check if token is expired or will expire in the next 5 minutes
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-    
-    let needs_refresh = account.token_expires_at
-        .map(|exp| exp - 300 < now) // 5 minute buffer
-        .unwrap_or(false);
-    
-    if !needs_refresh {
-        return Ok(account.access_token);
-    }
-    
-    // Refresh the token
-    let client_id = get_client_id_with_db(conn)?;
-    let client_secret = get_client_secret_with_db(conn)?;
-    let client = Client::new();
-    
-    let params = [
-        ("client_id", client_id.as_str()),
-        ("client_secret", client_secret.as_str()),
-        ("refresh_token", &account.refresh_token),
-        ("grant_type", "refresh_token"),
-    ];
-    
-    let response = client
-        .post(GOOGLE_TOKEN_URL)
-        .form(&params)
-        .send()
-        .await?;
-    
-    if !response.status().is_success() {
-        let error_text = response.text().await.unwrap_or_default();
-        return Err(GoogleAuthError::RefreshFailed(error_text));
-    }
-    
-    let tokens: TokenResponse = response.json().await?;
-    
-    // Calculate new expiry
-    let expires_at = tokens.expires_in.map(|secs| now + secs as i64);
-    
-    // Update database
-    conn.execute(
-        "UPDATE google_accounts SET access_token = ?1, token_expires_at = ?2 WHERE id = 'default'",
-        rusqlite::params![tokens.access_token, expires_at],
-    )?;
     
     Ok(tokens.access_token)
 }

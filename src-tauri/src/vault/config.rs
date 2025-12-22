@@ -159,6 +159,7 @@ pub fn create_vault(path: &Path) -> Result<VaultInfo, VaultError> {
     // Create subdirectories
     fs::create_dir_all(path.join("notes"))?;
     fs::create_dir_all(path.join("attachments"))?;
+    fs::create_dir_all(path.join("exports"))?;
     fs::create_dir_all(path.join(".inkling"))?;
     
     // Create a .gitignore for .inkling
@@ -231,6 +232,18 @@ pub fn get_notes_dir() -> Result<PathBuf, VaultError> {
 pub fn get_attachments_dir() -> Result<PathBuf, VaultError> {
     let vault = get_current_vault_path().ok_or(VaultError::NotConfigured)?;
     Ok(vault.join("attachments"))
+}
+
+pub fn get_exports_dir() -> Result<PathBuf, VaultError> {
+    let vault = get_current_vault_path().ok_or(VaultError::NotConfigured)?;
+    let exports_dir = vault.join("exports");
+    
+    // Ensure the exports directory exists
+    if !exports_dir.exists() {
+        fs::create_dir_all(&exports_dir)?;
+    }
+    
+    Ok(exports_dir)
 }
 
 pub fn get_inkling_dir() -> Result<PathBuf, VaultError> {

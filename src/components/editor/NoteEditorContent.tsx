@@ -573,7 +573,7 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
   return (
     <div className="flex h-full flex-col">
       {/* Fixed Formatting Toolbar */}
-      {isEditorToolbarVisible && <EditorToolbar editor={editor} />}
+      {isEditorToolbarVisible && <EditorToolbar editor={editor} noteId={noteId} />}
       
       {/* Title Input */}
       <div

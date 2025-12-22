@@ -23,24 +23,32 @@ import {
   Trash2,
   RowsIcon,
   Columns,
+  Download,
+  FileText,
+  FileSpreadsheet,
 } from "lucide-react";
 import { TableSizePicker } from "./TableSizePicker";
+import { useExportStore } from "../../stores/exportStore";
 
 interface EditorToolbarProps {
   editor: Editor | null;
+  noteId?: string;
 }
 
 /**
  * Fixed toolbar for the note editor
  * Provides formatting options for text and block elements
  */
-export function EditorToolbar({ editor }: EditorToolbarProps) {
+export function EditorToolbar({ editor, noteId }: EditorToolbarProps) {
   const [isHeadingDropdownOpen, setIsHeadingDropdownOpen] = useState(false);
   const [isInsertDropdownOpen, setIsInsertDropdownOpen] = useState(false);
   const [isTablePickerOpen, setIsTablePickerOpen] = useState(false);
   const [isTableMenuOpen, setIsTableMenuOpen] = useState(false);
   const [isLinkInputOpen, setIsLinkInputOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+  
+  const { exportNotesPdf, exportNotesDocx, exportSelectionXlsx, isExporting } = useExportStore();
 
   const handleLinkSubmit = useCallback(() => {
     if (!editor) return;
@@ -75,7 +83,28 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
     setIsInsertDropdownOpen(false);
     setIsTablePickerOpen(false);
     setIsTableMenuOpen(false);
+    setIsExportDropdownOpen(false);
   }, []);
+
+  const handleExportPdf = useCallback(async () => {
+    if (!noteId) return;
+    setIsExportDropdownOpen(false);
+    await exportNotesPdf([noteId]);
+  }, [noteId, exportNotesPdf]);
+
+  const handleExportDocx = useCallback(async () => {
+    if (!noteId) return;
+    setIsExportDropdownOpen(false);
+    await exportNotesDocx([noteId]);
+  }, [noteId, exportNotesDocx]);
+
+  const handleExportXlsx = useCallback(async () => {
+    if (!noteId || !editor) return;
+    setIsExportDropdownOpen(false);
+    // Get the current selection or full content
+    const content = editor.getHTML();
+    await exportSelectionXlsx(content, noteId);
+  }, [noteId, editor, exportSelectionXlsx]);
 
   const handleTableInsert = useCallback(
     (rows: number, cols: number) => {
@@ -515,6 +544,72 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
                     editor.chain().focus().deleteTable().run();
                     setIsTableMenuOpen(false);
                   }}
+                />
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Export dropdown - shown when noteId is available */}
+      {noteId && (
+        <>
+          <div className="flex-1" /> {/* Spacer to push export to the right */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                closeAllDropdowns();
+                setIsExportDropdownOpen(!isExportDropdownOpen);
+              }}
+              disabled={isExporting}
+              className="flex h-8 items-center gap-1 rounded px-2 text-sm font-medium transition-colors disabled:opacity-50"
+              style={{
+                color: "var(--color-text-primary)",
+                backgroundColor: isExportDropdownOpen
+                  ? "var(--color-bg-hover)"
+                  : "transparent",
+              }}
+              onMouseEnter={(e) => {
+                if (!isExporting) {
+                  e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+                }
+              }}
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor = isExportDropdownOpen
+                  ? "var(--color-bg-hover)"
+                  : "transparent")
+              }
+            >
+              <Download size={14} />
+              <span>{isExporting ? "Exporting..." : "Export"}</span>
+              <ChevronDown size={12} />
+            </button>
+
+            {isExportDropdownOpen && (
+              <div
+                className="absolute right-0 top-full z-50 mt-1 min-w-[160px] rounded-lg border py-1 shadow-lg"
+                style={{
+                  backgroundColor: "var(--color-bg-primary)",
+                  borderColor: "var(--color-border)",
+                }}
+              >
+                <DropdownOption
+                  label="Export as PDF"
+                  icon={<FileText size={14} />}
+                  isActive={false}
+                  onClick={handleExportPdf}
+                />
+                <DropdownOption
+                  label="Export as DOCX"
+                  icon={<FileText size={14} />}
+                  isActive={false}
+                  onClick={handleExportDocx}
+                />
+                <DropdownOption
+                  label="Tables to XLSX"
+                  icon={<FileSpreadsheet size={14} />}
+                  isActive={false}
+                  onClick={handleExportXlsx}
                 />
               </div>
             )}

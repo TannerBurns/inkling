@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useMemo, useEffect } from "react";
-import { X, FileText, Kanban, SplitSquareHorizontal, Network, Calendar } from "lucide-react";
+import { X, FileText, Kanban, SplitSquareHorizontal, Network, Calendar, Download } from "lucide-react";
 import {
   useEditorGroupStore,
   type EditorGroup,
@@ -59,6 +59,8 @@ export function PaneTabs({ group: groupProp }: PaneTabsProps) {
         return { ...tab, title: "Knowledge Graph" };
       } else if (tab.type === "calendar") {
         return { ...tab, title: "Calendar" };
+      } else if (tab.type === "exports") {
+        return { ...tab, title: "Exports" };
       }
       return { ...tab, title: "Unknown" };
     });
@@ -303,6 +305,8 @@ export function PaneTabs({ group: groupProp }: PaneTabsProps) {
               <Kanban size={14} className="flex-shrink-0 opacity-60" />
             ) : tab.type === "calendar" ? (
               <Calendar size={14} className="flex-shrink-0 opacity-60" />
+            ) : tab.type === "exports" ? (
+              <Download size={14} className="flex-shrink-0 opacity-60" />
             ) : (
               <Network size={14} className="flex-shrink-0 opacity-60" />
             )}

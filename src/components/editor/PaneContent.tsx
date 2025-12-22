@@ -6,6 +6,7 @@ import { NoteEditorContent } from "./NoteEditorContent";
 import { BoardView } from "../board/BoardView";
 import { GraphView } from "../graph/GraphView";
 import { CalendarView } from "../calendar/CalendarView";
+import { ExportsView } from "../exports";
 
 interface PaneContentProps {
   groupId: string;
@@ -76,6 +77,10 @@ export function PaneContent({ groupId, activeTab }: PaneContentProps) {
 
   if (activeTab.type === "calendar") {
     return <CalendarView />;
+  }
+
+  if (activeTab.type === "exports") {
+    return <ExportsView />;
   }
 
   return null;

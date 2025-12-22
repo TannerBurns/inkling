@@ -5,6 +5,8 @@ import { SplitContainer } from "./components/editor/SplitContainer";
 import { RightSidebar } from "./components/notes/RightSidebar";
 import { SettingsModal } from "./components/settings/SettingsModal";
 import { DragOverlay } from "./components/shared/DragOverlay";
+import { ExportModal, ExportNotifications } from "./components/exports";
+import { CommandPalette } from "./components/command";
 import { VaultSetup } from "./components/setup/VaultSetup";
 import { useNoteStore } from "./stores/noteStore";
 import { useFolderStore } from "./stores/folderStore";
@@ -159,6 +161,9 @@ function App() {
         }
       />
       <SettingsModal />
+      <ExportModal />
+      <ExportNotifications />
+      <CommandPalette />
       <DragOverlay />
     </>
   );

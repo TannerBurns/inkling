@@ -29,6 +29,23 @@ export interface AIProvider {
   models: string[];
   /** Currently selected model for this provider */
   selectedModel?: string;
+  /** Context window size in tokens (optional, uses provider defaults if not set) */
+  contextLength?: number;
+}
+
+/** Default context lengths by provider type (in tokens) */
+export const DEFAULT_CONTEXT_LENGTHS: Record<ProviderType, number> = {
+  openai: 200_000,
+  anthropic: 200_000,
+  google: 1_000_000,
+  ollama: 32_000,
+  lmstudio: 32_000,
+  custom: 32_000,
+};
+
+/** Get the effective context length for a provider */
+export function getEffectiveContextLength(provider: AIProvider): number {
+  return provider.contextLength ?? DEFAULT_CONTEXT_LENGTHS[provider.type] ?? 32_000;
 }
 
 /** Configuration for embedding generation */
