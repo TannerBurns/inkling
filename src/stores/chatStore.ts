@@ -9,6 +9,7 @@ import type {
 } from "../types/chat";
 import * as chatApi from "../lib/chat";
 import { useNoteStore } from "./noteStore";
+import { useEditorGroupStore } from "./editorGroupStore";
 
 /** Mode for the right sidebar */
 export type RightSidebarMode = "notes" | "chat";
@@ -274,10 +275,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // Message actions
   sendMessage: async (content) => {
-    const { currentConversationId, messages } = get();
+    const { currentConversationId, messages, attachedContext } = get();
     
-    // Get context from open tabs in noteStore
-    const { openNoteIds, notes } = useNoteStore.getState();
+    // Get open note tabs from editorGroupStore (the actual tabs, not noteStore.openNoteIds which is stale)
+    const { groups } = useEditorGroupStore.getState();
+    const openNoteIds: string[] = [];
+    for (const group of groups) {
+      for (const tab of group.tabs) {
+        if (tab.type === "note" && !openNoteIds.includes(tab.id)) {
+          openNoteIds.push(tab.id);
+        }
+      }
+    }
+    
+    // Get note details from noteStore
+    const { notes } = useNoteStore.getState();
     const tabContext: ContextItem[] = openNoteIds
       .map((id) => notes.find((n) => n.id === id))
       .filter((n): n is NonNullable<typeof n> => n !== undefined)
@@ -286,6 +298,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         noteTitle: note.title,
         isFullNote: true,
       }));
+    
+    // Merge attached context (from @mentions) with open tab context, avoiding duplicates
+    const mergedContext = [...attachedContext];
+    for (const item of tabContext) {
+      if (!mergedContext.some((c) => c.noteId === item.noteId)) {
+        mergedContext.push(item);
+      }
+    }
 
     // Create optimistic user message to show immediately
     const optimisticUserMessage = {
@@ -314,9 +334,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         content,
         conversationId: currentConversationId ?? undefined,
         sessionId,
-        context: tabContext, // Use open tabs as context
+        context: mergedContext, // Use @mentions + open tabs as context
         autoRetrieveCount: 0, // Disable auto-retrieve
       };
+      
+      // Clear attached context after sending
+      set({ attachedContext: [] });
 
       // Set up stream listener with session ID BEFORE sending
       const unlisten = await chatApi.listenToStream(sessionId, (event) => {
@@ -352,10 +375,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
           firstMessagePreview: response.userMessage.content.slice(0, 100),
         };
 
-        // Add to open tabs if new conversation
-        const newOpenTabIds = isNewConversation && !state.openTabIds.includes(response.conversation.id)
+        // Add to open tabs if not already there
+        const newOpenTabIds = !state.openTabIds.includes(response.conversation.id)
           ? [...state.openTabIds, response.conversation.id]
           : state.openTabIds;
+
+        // Check if preview already exists (can happen due to race with fetchConversations)
+        const existingPreviewIndex = state.conversationPreviews.findIndex(
+          (p) => p.conversation.id === response.conversation.id
+        );
+        
+        // Update existing preview or add new one
+        let updatedPreviews: typeof state.conversationPreviews;
+        if (existingPreviewIndex >= 0) {
+          // Update the existing preview with the new data (including AI-generated title)
+          updatedPreviews = state.conversationPreviews.map((p, i) =>
+            i === existingPreviewIndex ? newPreview : p
+          );
+          // If it's a new conversation, move it to the front
+          if (isNewConversation) {
+            const updated = updatedPreviews[existingPreviewIndex];
+            updatedPreviews = [
+              updated,
+              ...updatedPreviews.slice(0, existingPreviewIndex),
+              ...updatedPreviews.slice(existingPreviewIndex + 1),
+            ];
+          }
+        } else {
+          // Add new preview at the front
+          updatedPreviews = [newPreview, ...state.conversationPreviews];
+        }
 
         return {
           currentConversationId: response.conversation.id,
@@ -364,11 +413,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           streamingContent: "",
           currentSessionId: null,
           openTabIds: newOpenTabIds,
-          conversationPreviews: isNewConversation
-            ? [newPreview, ...state.conversationPreviews]
-            : state.conversationPreviews.map((p) =>
-                p.conversation.id === response.conversation.id ? newPreview : p
-              ),
+          conversationPreviews: updatedPreviews,
         };
       });
 
@@ -386,10 +431,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessageSync: async (content) => {
-    const { currentConversationId } = get();
+    const { currentConversationId, attachedContext } = get();
     
-    // Get context from open tabs in noteStore
-    const { openNoteIds, notes } = useNoteStore.getState();
+    // Get open note tabs from editorGroupStore (the actual tabs, not noteStore.openNoteIds which is stale)
+    const { groups } = useEditorGroupStore.getState();
+    const openNoteIds: string[] = [];
+    for (const group of groups) {
+      for (const tab of group.tabs) {
+        if (tab.type === "note" && !openNoteIds.includes(tab.id)) {
+          openNoteIds.push(tab.id);
+        }
+      }
+    }
+    
+    // Get note details from noteStore
+    const { notes } = useNoteStore.getState();
     const tabContext: ContextItem[] = openNoteIds
       .map((id) => notes.find((n) => n.id === id))
       .filter((n): n is NonNullable<typeof n> => n !== undefined)
@@ -398,14 +454,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
         noteTitle: note.title,
         isFullNote: true,
       }));
+    
+    // Merge attached context (from @mentions) with open tab context, avoiding duplicates
+    const mergedContext = [...attachedContext];
+    for (const item of tabContext) {
+      if (!mergedContext.some((c) => c.noteId === item.noteId)) {
+        mergedContext.push(item);
+      }
+    }
 
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, attachedContext: [] });
 
     try {
       const input: SendMessageInput = {
         content,
         conversationId: currentConversationId ?? undefined,
-        context: tabContext, // Use open tabs as context
+        context: mergedContext, // Use @mentions + open tabs as context
         autoRetrieveCount: 0, // Disable auto-retrieve
       };
 
@@ -422,15 +486,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
           firstMessagePreview: response.userMessage.content.slice(0, 100),
         };
 
+        // Add to open tabs if not already there
+        const newOpenTabIds = !state.openTabIds.includes(response.conversation.id)
+          ? [...state.openTabIds, response.conversation.id]
+          : state.openTabIds;
+
+        // Check if preview already exists (can happen due to race with fetchConversations)
+        const existingPreviewIndex = state.conversationPreviews.findIndex(
+          (p) => p.conversation.id === response.conversation.id
+        );
+        
+        // Update existing preview or add new one
+        let updatedPreviews: typeof state.conversationPreviews;
+        if (existingPreviewIndex >= 0) {
+          // Update the existing preview with the new data (including AI-generated title)
+          updatedPreviews = state.conversationPreviews.map((p, i) =>
+            i === existingPreviewIndex ? newPreview : p
+          );
+          // If it's a new conversation, move it to the front
+          if (isNewConversation) {
+            const updated = updatedPreviews[existingPreviewIndex];
+            updatedPreviews = [
+              updated,
+              ...updatedPreviews.slice(0, existingPreviewIndex),
+              ...updatedPreviews.slice(existingPreviewIndex + 1),
+            ];
+          }
+        } else {
+          // Add new preview at the front
+          updatedPreviews = [newPreview, ...state.conversationPreviews];
+        }
+
         return {
           currentConversationId: response.conversation.id,
           messages: newMessages,
           isLoading: false,
-          conversationPreviews: isNewConversation
-            ? [newPreview, ...state.conversationPreviews]
-            : state.conversationPreviews.map((p) =>
-                p.conversation.id === response.conversation.id ? newPreview : p
-              ),
+          openTabIds: newOpenTabIds,
+          conversationPreviews: updatedPreviews,
         };
       });
 

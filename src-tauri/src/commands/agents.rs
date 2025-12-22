@@ -552,16 +552,25 @@ fn get_chat_model(config: &crate::ai::AIConfig) -> Result<String, String> {
             }
         }
         crate::ai::ProviderType::OpenAI => {
-            let model_name = strip_provider_prefix(&model);
-            format!("openai/{}", model_name)
+            if model.starts_with("openai/") {
+                model
+            } else {
+                format!("openai/{}", model)
+            }
         }
         crate::ai::ProviderType::Anthropic => {
-            let model_name = strip_provider_prefix(&model);
-            format!("anthropic/{}", model_name)
+            if model.starts_with("anthropic/") {
+                model
+            } else {
+                format!("anthropic/{}", model)
+            }
         }
         crate::ai::ProviderType::Google => {
-            let model_name = strip_provider_prefix(&model);
-            format!("google/{}", model_name)
+            if model.starts_with("google/") {
+                model
+            } else {
+                format!("google/{}", model)
+            }
         }
         crate::ai::ProviderType::Custom => {
             // Custom providers route through OpenAI
@@ -600,19 +609,6 @@ fn get_model_and_provider(config: &crate::ai::AIConfig) -> Result<(String, crate
         .or_else(|| provider.models.first().cloned())
         .ok_or_else(|| format!("No model available for provider {}", provider.name))?;
 
-    // Strip provider prefix - we'll use the model name directly
-    let model_name = strip_provider_prefix(&model);
-
-    Ok((model_name, provider))
-}
-
-/// Strip known provider prefixes from model name
-fn strip_provider_prefix(model: &str) -> String {
-    let known_prefixes = ["openai/", "anthropic/", "google/", "ollama/", "lmstudio/", "vllm/"];
-    for prefix in known_prefixes {
-        if model.starts_with(prefix) {
-            return model[prefix.len()..].to_string();
-        }
-    }
-    model.to_string()
+    // Use the model name directly as it comes from the provider
+    Ok((model, provider))
 }

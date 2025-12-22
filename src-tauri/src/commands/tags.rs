@@ -236,16 +236,14 @@ fn get_chat_model(config: &crate::ai::AIConfig) -> Result<String, String> {
             if model.starts_with("lmstudio/") {
                 model
             } else {
-                let clean_model = strip_provider_prefix(&model);
-                format!("lmstudio/{}", clean_model)
+                format!("lmstudio/{}", model)
             }
         }
         crate::ai::ProviderType::VLLM => {
             if model.starts_with("vllm/") {
                 model
             } else {
-                let clean_model = strip_provider_prefix(&model);
-                format!("vllm/{}", clean_model)
+                format!("vllm/{}", model)
             }
         }
         crate::ai::ProviderType::OpenAI => {
@@ -302,19 +300,6 @@ fn get_tagging_model_and_provider(config: &crate::ai::AIConfig) -> Result<(Strin
         .or_else(|| provider.models.first().cloned())
         .ok_or_else(|| format!("No model available for provider {}", provider.name))?;
 
-    // Strip provider prefix - we'll use the model name directly
-    let model_name = strip_provider_prefix(&model);
-
-    Ok((model_name, provider))
-}
-
-/// Helper to strip known provider prefixes from model names
-fn strip_provider_prefix(model: &str) -> String {
-    let known_prefixes = ["openai/", "anthropic/", "google/", "ollama/", "lmstudio/", "vllm/"];
-    for prefix in known_prefixes {
-        if model.starts_with(prefix) {
-            return model[prefix.len()..].to_string();
-        }
-    }
-    model.to_string()
+    // Use the model name directly as it comes from the provider
+    Ok((model, provider))
 }

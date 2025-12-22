@@ -6,6 +6,7 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { Message } from "../../types/chat";
 import { formatMessageTime } from "../../lib/chat";
 import { NoteCitation } from "./NoteCitation";
+import { TextWithMentions } from "./NoteMention";
 import { useChatStore } from "../../stores/chatStore";
 
 interface MessageBubbleProps {
@@ -163,8 +164,10 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
         {/* Message content with markdown */}
         <div className="text-sm leading-relaxed">
           {isUser ? (
-            // User messages: plain text with whitespace preserved
-            <div className="whitespace-pre-wrap">{message.content}</div>
+            // User messages: plain text with @mentions rendered as badges
+            <div className="whitespace-pre-wrap">
+              <TextWithMentions content={message.content} variant="message-user" />
+            </div>
           ) : (
             // Assistant messages: render markdown with syntax highlighting
             <MarkdownContent content={message.content} isStreaming={isStreaming} />

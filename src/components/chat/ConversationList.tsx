@@ -119,10 +119,18 @@ export function ConversationList() {
 
             {/* Conversations in group */}
             {previews.map((preview) => (
-              <button
+              <div
                 key={preview.conversation.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => selectConversation(preview.conversation.id)}
-                className="group flex items-start gap-2 px-4 py-2.5 text-left transition-colors hover:bg-[var(--color-bg-hover)]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    selectConversation(preview.conversation.id);
+                  }
+                }}
+                className="group flex cursor-pointer items-start gap-2 px-4 py-2.5 text-left transition-colors hover:bg-[var(--color-bg-hover)]"
               >
                 <svg
                   className="mt-0.5 h-4 w-4 flex-shrink-0"
@@ -198,7 +206,7 @@ export function ConversationList() {
                     />
                   </svg>
                 </button>
-              </button>
+              </div>
             ))}
           </div>
         );

@@ -563,15 +563,18 @@ pub async fn refresh_token_if_needed_with_pool(pool: &DbPool) -> Result<String, 
     }
     
     // Refresh the token (async HTTP call)
-    // Get client_id from database or fallback
-    let client_id = {
+    // Get client_id and client_secret from database or fallback
+    let (client_id, client_secret) = {
         let conn = pool.get().map_err(|e| GoogleAuthError::OAuthError(e.to_string()))?;
-        get_client_id_with_db(&conn)?
+        let id = get_client_id_with_db(&conn)?;
+        let secret = get_client_secret_with_db(&conn)?;
+        (id, secret)
     };
     let client = Client::new();
     
     let params = [
         ("client_id", client_id.as_str()),
+        ("client_secret", client_secret.as_str()),
         ("refresh_token", &account.refresh_token),
         ("grant_type", "refresh_token"),
     ];
@@ -625,10 +628,12 @@ pub async fn refresh_token_if_needed(conn: &Connection) -> Result<String, Google
     
     // Refresh the token
     let client_id = get_client_id_with_db(conn)?;
+    let client_secret = get_client_secret_with_db(conn)?;
     let client = Client::new();
     
     let params = [
         ("client_id", client_id.as_str()),
+        ("client_secret", client_secret.as_str()),
         ("refresh_token", &account.refresh_token),
         ("grant_type", "refresh_token"),
     ];

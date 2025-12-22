@@ -256,7 +256,7 @@ export function formatConversationTime(updatedAt: string): string {
  * Truncate conversation title for display
  */
 export function truncateTitle(title: string | null, maxLen = 40): string {
-  if (!title) return "New Conversation";
+  if (!title) return "New Chat";
   if (title.length <= maxLen) return title;
   return `${title.slice(0, maxLen - 3)}...`;
 }

@@ -246,7 +246,6 @@ pub async fn send_chat_message(
     active_streams: State<'_, ActiveStreams>,
     input: SendMessageInput,
 ) -> Result<ChatResponse, String> {
-    
     // 1. Get or create conversation, save user message (sync db operations)
     let (conversation, user_message, history, system_prompt_base, model, provider, is_new_conversation) = {
         let pool_guard = pool.0.read().unwrap();
@@ -339,9 +338,9 @@ pub async fn send_chat_message(
     llm_messages.push(LlmChatMessage::user(&input.content));
 
     let chat_request = ChatRequest {
-        model: strip_provider_prefix(&model),
+        model: model.clone(),
         messages: llm_messages,
-        max_tokens: Some(4096),
+        max_tokens: None, // Let the model decide, avoid compatibility issues
         temperature: None,
         tools: None,
         tool_choice: None,
@@ -600,9 +599,9 @@ pub async fn send_chat_message_sync(
     llm_messages.push(LlmChatMessage::user(&input.content));
 
     let chat_request = ChatRequest {
-        model: strip_provider_prefix(&model),
+        model: model.clone(),
         messages: llm_messages,
-        max_tokens: Some(4096),
+        max_tokens: None, // Let the model decide, avoid compatibility issues
         temperature: None,
         tools: None,
         tool_choice: None,
@@ -805,9 +804,9 @@ pub async fn edit_message_and_regenerate(
     llm_messages.push(LlmChatMessage::user(&new_content));
 
     let chat_request = ChatRequest {
-        model: strip_provider_prefix(&model),
+        model: model.clone(),
         messages: llm_messages,
-        max_tokens: Some(4096),
+        max_tokens: None, // Let the model decide, avoid compatibility issues
         temperature: None,
         tools: None,
         tool_choice: None,
@@ -1023,15 +1022,15 @@ fn get_chat_model(config: &crate::ai::AIConfig) -> Result<String, String> {
         }
         crate::ai::ProviderType::OpenAI => {
             // For OpenAI, strip any wrong prefix and use openai/
-            let model_name = strip_provider_prefix(&model);
+            let model_name = model.clone();
             Ok(format!("openai/{}", model_name))
         }
         crate::ai::ProviderType::Anthropic => {
-            let model_name = strip_provider_prefix(&model);
+            let model_name = model.clone();
             Ok(format!("anthropic/{}", model_name))
         }
         crate::ai::ProviderType::Google => {
-            let model_name = strip_provider_prefix(&model);
+            let model_name = model.clone();
             Ok(format!("google/{}", model_name))
         }
         crate::ai::ProviderType::Custom => {
@@ -1080,15 +1079,15 @@ fn get_chat_model_and_provider(config: &crate::ai::AIConfig) -> Result<(String, 
             if model.starts_with("vllm/") { model } else { format!("vllm/{}", model) }
         }
         crate::ai::ProviderType::OpenAI => {
-            let model_name = strip_provider_prefix(&model);
+            let model_name = model.clone();
             format!("openai/{}", model_name)
         }
         crate::ai::ProviderType::Anthropic => {
-            let model_name = strip_provider_prefix(&model);
+            let model_name = model.clone();
             format!("anthropic/{}", model_name)
         }
         crate::ai::ProviderType::Google => {
-            let model_name = strip_provider_prefix(&model);
+            let model_name = model.clone();
             format!("google/{}", model_name)
         }
         crate::ai::ProviderType::Custom => {
@@ -1101,22 +1100,8 @@ fn get_chat_model_and_provider(config: &crate::ai::AIConfig) -> Result<(String, 
 
 /// Strip known provider prefixes from model name
 /// Only strips if the prefix matches a known provider (openai/, anthropic/, google/, ollama/, lmstudio/, vllm/)
-fn strip_provider_prefix(model: &str) -> String {
-    let known_prefixes = ["openai/", "anthropic/", "google/", "ollama/", "lmstudio/", "vllm/"];
-    for prefix in known_prefixes {
-        if model.starts_with(prefix) {
-            return model[prefix.len()..].to_string();
-        }
-    }
-    model.to_string()
-}
-
 /// System prompt for title generation
-const TITLE_SYSTEM_PROMPT: &str = r#"You are a title generator. Generate a short, concise title (3-6 words) that summarizes the user's message. 
-- Output ONLY the title, nothing else
-- No quotes, no punctuation at the end
-- Be descriptive but brief
-- Capture the main intent or topic"#;
+const TITLE_SYSTEM_PROMPT: &str = r#"Generate a short title (3-6 words max) for the user's message. Output ONLY the title text - no quotes, no punctuation, no explanation. Just the title words."#;
 
 /// Generate a conversation title using AI
 async fn generate_ai_title(
@@ -1133,9 +1118,9 @@ async fn generate_ai_title(
     ];
     
     let request = ChatRequest {
-        model: strip_provider_prefix(model),
+        model: model.to_string(),
         messages,
-        max_tokens: Some(50),
+        max_tokens: None,
         temperature: Some(0.7),
         tools: None,
         tool_choice: None,
@@ -1153,5 +1138,5 @@ async fn generate_ai_title(
     // Clean up the title - remove quotes if present
     let title = title.trim_matches('"').trim_matches('\'').to_string();
     
-    Ok(if title.is_empty() { "New Chat".to_string() } else { title })
+    if title.is_empty() { Ok("New Chat".to_string()) } else { Ok(title) }
 }

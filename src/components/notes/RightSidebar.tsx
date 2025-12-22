@@ -1,5 +1,6 @@
 import { RelatedNotes } from "./RelatedNotes";
 import { Backlinks } from "./Backlinks";
+import { RecentNotes } from "./RecentNotes";
 import { ChatPanel } from "../chat/ChatPanel";
 import { useChatStore } from "../../stores/chatStore";
 import type { SearchResult } from "../../lib/search";
@@ -79,25 +80,34 @@ export function RightSidebar({
       <div className="flex-1 overflow-y-auto">
         {isNotesMode ? (
           <div className="flex h-full flex-col">
-        {/* Related Notes (semantic) */}
-        <RelatedNotes
-          relatedNotes={relatedNotes}
-          isLoading={relatedNotesLoading}
-          error={relatedNotesError}
-        />
+            {/* Recent Notes */}
+            <RecentNotes />
 
-        {/* Divider */}
-        <div
-          className="mx-4 border-t"
-          style={{ borderColor: "var(--color-border)" }}
-        />
+            {/* Divider */}
+            <div
+              className="mx-4 border-t"
+              style={{ borderColor: "var(--color-border)" }}
+            />
 
-        {/* Backlinks (wiki-style links) */}
-        <Backlinks
-          backlinks={backlinks}
-          isLoading={backlinksLoading}
-          error={backlinksError}
-        />
+            {/* Related Notes (semantic) */}
+            <RelatedNotes
+              relatedNotes={relatedNotes}
+              isLoading={relatedNotesLoading}
+              error={relatedNotesError}
+            />
+
+            {/* Divider */}
+            <div
+              className="mx-4 border-t"
+              style={{ borderColor: "var(--color-border)" }}
+            />
+
+            {/* Backlinks (wiki-style links) */}
+            <Backlinks
+              backlinks={backlinks}
+              isLoading={backlinksLoading}
+              error={backlinksError}
+            />
           </div>
         ) : (
           <ChatPanel />

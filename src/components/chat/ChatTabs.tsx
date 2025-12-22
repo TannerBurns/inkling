@@ -57,7 +57,8 @@ export function ChatTabs() {
       {/* Conversation tabs */}
       {openTabs.map((preview) => {
         const isActive = currentConversationId === preview.conversation.id;
-        const title = preview.conversation.title || "New Chat";
+        const displayTitle = truncateTitle(preview.conversation.title, 15);
+        const fullTitle = preview.conversation.title || "New Chat";
 
         return (
           <div
@@ -76,9 +77,9 @@ export function ChatTabs() {
                   ? "var(--color-text-primary)"
                   : "var(--color-text-secondary)",
               }}
-              title={title}
+              title={fullTitle}
             >
-              {truncateTitle(title, 15)}
+              {displayTitle}
             </button>
             {/* Close button - visible on hover or when active */}
             <button

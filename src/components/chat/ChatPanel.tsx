@@ -3,9 +3,10 @@ import { useChatStore, useCurrentConversation } from "../../stores/chatStore";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 import { ContextPanel } from "./ContextPanel";
-import { ConversationList } from "./ConversationList";
 import { ChatTabs } from "./ChatTabs";
 import { ModelSelector } from "./ModelSelector";
+import { HistoryDropdown } from "./HistoryDropdown";
+import { NewChatView } from "./NewChatView";
 
 /**
  * Main chat panel component
@@ -102,7 +103,7 @@ export function ChatPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header with Model Selector */}
+      {/* Header with History Dropdown and Model Selector */}
       <div
         className="flex flex-shrink-0 items-center justify-between border-b px-3 py-2"
         style={{ borderColor: "var(--color-border)" }}
@@ -113,7 +114,10 @@ export function ChatPanel() {
         >
           {currentConversation?.title || "Inkling Chat"}
         </h2>
-        <ModelSelector />
+        <div className="flex items-center gap-1">
+          <HistoryDropdown />
+          <ModelSelector />
+        </div>
       </div>
 
       {/* Chat Tabs (show when there are open tabs) */}
@@ -164,14 +168,14 @@ export function ChatPanel() {
       {/* Context Panel (shown when context is attached) */}
       {attachedContext.length > 0 && <ContextPanel />}
 
-      {/* Messages or Conversation List */}
+      {/* Messages or New Chat View */}
       <div 
         ref={scrollContainerRef}
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto"
       >
         {messages.length === 0 && !currentConversation ? (
-          <ConversationList />
+          <NewChatView />
         ) : (
           <MessageList
             messages={messages}
