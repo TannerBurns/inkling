@@ -17,13 +17,16 @@ use crate::db::connection::DbPool;
 use super::agent::{run_agent, run_agent_with_events, AgentError, CancellationToken, ToolDefinition, ToolExecutor};
 use super::config::AIProvider;
 use super::tools::{
-    execute_search_notes, execute_web_search, format_results_for_agent, get_search_notes_tool,
-    get_web_search_tool, AgentConfig,
+    execute_export_notes_docx, execute_export_notes_pdf, execute_export_selection_xlsx,
+    execute_search_notes, execute_web_search, format_results_for_agent,
+    get_export_notes_docx_tool, get_export_notes_pdf_tool, get_export_selection_xlsx_tool,
+    get_search_notes_tool, get_web_search_tool, AgentConfig,
+    get_all_document_builder_tools, get_document_builder_tool_function,
 };
 
 /// System prompt for the inline assistant
 pub const INLINE_ASSISTANT_SYSTEM_PROMPT: &str = r#"You are an inline writing assistant for a note-taking app called Inkling.
-The user will ask you to help with research, content creation, diagrams, or images.
+The user will ask you to help with research, content creation, diagrams, images, or document exports.
 
 AVAILABLE TOOLS:
 - search_notes: Search the user's existing notes for relevant information
@@ -33,12 +36,34 @@ AVAILABLE TOOLS:
 - create_mermaid: Create a Mermaid diagram (flowcharts, sequences, etc.)
 - create_excalidraw: Create an Excalidraw sketch diagram
 - write_content: Output the final markdown content to be inserted
+- export_notes_pdf: Export notes to a PDF document
+- export_notes_docx: Export notes to a Word document
+- export_selection_xlsx: Export table content to an Excel spreadsheet
+
+DOCUMENT BUILDER TOOLS (for creating documents incrementally):
+- create_document: Start a new document draft (returns document_id)
+- add_section: Add sections (headings, paragraphs, lists, etc.)
+- add_table: Add tables with headers and rows
+- save_document: Save the completed document to file
+- cancel_document: Discard a document draft
 
 WORKFLOW:
 1. Analyze what the user is asking for
 2. Use appropriate tools to gather information or create visuals
 3. Use write_content to produce the final markdown output
 4. Include proper attribution for images and sources
+
+DOCUMENT EXPORT WORKFLOW:
+Quick export (single action):
+- Use export_notes_pdf or export_notes_docx to export existing notes directly
+- Use export_selection_xlsx to export table content to Excel
+
+Custom document building (multi-step):
+1. Use create_document to start a new document
+2. Use add_section multiple times to add content (headings, paragraphs, lists)
+3. Use add_table to add tables
+4. Use save_document to generate the final file
+5. Use write_content to provide a link to the exported file
 
 OUTPUT FORMAT:
 Your final output should be well-formatted markdown that can be inserted into the note.
@@ -49,7 +74,9 @@ GUIDELINES:
 - Use headings, bullet points, and formatting for clarity
 - For diagrams, prefer Mermaid for flowcharts/sequences, Excalidraw for sketches
 - Always cite sources when using information from web search or notes
-- If you can't find relevant information, say so rather than making things up"#;
+- When exporting documents, always provide a descriptive title
+- If you can't find relevant information, say so rather than making things up
+- For complex documents, use the document builder tools for more control"#;
 
 /// Result of running the inline assistant
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -265,6 +292,17 @@ impl ToolExecutor for InlineAssistant {
             "create_mermaid" => self.create_mermaid(args),
             "create_excalidraw" => self.create_excalidraw(args),
             "write_content" => self.write_content(args),
+            "export_notes_pdf" => execute_export_notes_pdf(&self.pool, args),
+            "export_notes_docx" => execute_export_notes_docx(&self.pool, args),
+            "export_selection_xlsx" => execute_export_selection_xlsx(&self.pool, args),
+            // Document builder tools
+            "create_document" | "add_section" | "add_table" | "save_document" | "cancel_document" => {
+                if let Some(tool_fn) = get_document_builder_tool_function(name) {
+                    tool_fn(args)
+                } else {
+                    Err(format!("Document builder tool not found: {}", name))
+                }
+            }
             _ => Err(format!("Unknown tool: {}", name)),
         }
     }
@@ -383,6 +421,29 @@ pub fn get_inline_assistant_tools(config: &AgentConfig) -> Vec<ToolDefinition> {
             "required": ["content"]
         }),
     ));
+
+    // Export tools (always included for document generation)
+    if config.is_tool_enabled("export_notes_pdf") {
+        tools.push(get_export_notes_pdf_tool());
+    }
+    if config.is_tool_enabled("export_notes_docx") {
+        tools.push(get_export_notes_docx_tool());
+    }
+    if config.is_tool_enabled("export_selection_xlsx") {
+        tools.push(get_export_selection_xlsx_tool());
+    }
+
+    // Document builder tools (for multi-step document creation)
+    if config.is_tool_enabled("create_document") {
+        for tool_json in get_all_document_builder_tools() {
+            if let Some(func) = tool_json.get("function") {
+                let name = func.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let description = func.get("description").and_then(|v| v.as_str()).unwrap_or("");
+                let parameters = func.get("parameters").cloned().unwrap_or(json!({}));
+                tools.push(ToolDefinition::function(name, description, parameters));
+            }
+        }
+    }
 
     tools
 }

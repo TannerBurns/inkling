@@ -383,10 +383,12 @@ export function DayView() {
               
               const startHour = startTime.getHours() + startTime.getMinutes() / 60;
               const endHour = endTime.getHours() + endTime.getMinutes() / 60;
-              const duration = Math.max(endHour - startHour, 0.5);
+              // Allow events to display their true duration - no artificial minimum
+              const duration = endHour - startHour;
               
               const top = startHour * 64; // 64px per hour (h-16)
-              const height = duration * 64;
+              // Calculate height based on actual duration, with a small minimum for clickability
+              const height = Math.max(duration * 64, 20);
               
               // Get position for overlapping events
               const position = eventPositions.get(event.id) || { left: 0, width: 100, colorIndex: 0 };
@@ -400,30 +402,31 @@ export function DayView() {
                     e.preventDefault();
                     openContextMenu(event, { x: e.clientX, y: e.clientY });
                   }}
-                  className="absolute overflow-hidden rounded-lg px-3 py-2 text-left transition-opacity hover:opacity-80"
+                  className="absolute overflow-hidden rounded-lg px-2 py-1 text-left transition-opacity hover:opacity-80"
                   style={{
                     top: `${top}px`,
-                    height: `${Math.max(height, 32)}px`,
+                    height: `${height}px`,
                     left: `calc(${position.left}% + 4px)`,
                     width: `calc(${position.width}% - 16px)`,
                     backgroundColor: colors.bg,
                     borderLeft: `4px solid ${colors.border}`,
                   }}
+                  title={`${event.title} • ${startTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} - ${endTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}
                 >
                   <div
-                    className="flex items-center gap-1 truncate font-medium"
+                    className={`flex items-center gap-1 truncate font-medium ${height < 40 ? 'text-xs' : ''}`}
                     style={{ color: "var(--color-text-primary)" }}
                   >
                     <span className="truncate">{event.title}</span>
                     {event.attendees && event.attendees.length > 0 && (
                       <span className="flex items-center gap-0.5 flex-shrink-0" style={{ color: "var(--color-text-tertiary)" }}>
-                        <Users size={11} />
+                        <Users size={height < 40 ? 9 : 11} />
                         <span className="text-[10px]">{event.attendees.length}</span>
                       </span>
                     )}
                     {getStatusIcon(event.responseStatus)}
                   </div>
-                  {height > 50 && (
+                  {height > 40 && (
                     <>
                       <div
                         className="text-xs"

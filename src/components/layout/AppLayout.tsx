@@ -1,6 +1,6 @@
 import { ReactNode, useState, useCallback, useRef, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Settings, Network, Calendar } from "lucide-react";
+import { Settings, Network, Calendar, Download } from "lucide-react";
 import { useChatStore } from "../../stores/chatStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useEditorGroupStore } from "../../stores/editorGroupStore";
@@ -302,6 +302,18 @@ export function AppLayout({ sidebar, editor, rightSidebar }: AppLayoutProps) {
             className="mx-1 h-4 w-px"
             style={{ backgroundColor: "var(--color-border)" }}
           />
+
+          {/* Exports button */}
+          <button
+            onClick={() => openTab({ type: "exports", id: "main" })}
+            className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-bg-tertiary)]"
+            style={{
+              color: "var(--color-text-tertiary)",
+            }}
+            title="View Exports"
+          >
+            <Download className="h-4 w-4" />
+          </button>
 
           {/* Settings button */}
           <button

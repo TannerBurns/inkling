@@ -122,3 +122,14 @@ export type {
   EventMeetingInfo,
   GoogleAccount,
 } from './google';
+
+export type {
+  ExportFormat,
+  Export,
+  ExportResult,
+  ExportNotesPdfInput,
+  ExportNotesDocxInput,
+  ExportContentXlsxInput,
+} from './export';
+
+export { FORMAT_LABELS, FORMAT_EXTENSIONS, FORMAT_ICONS } from './export';

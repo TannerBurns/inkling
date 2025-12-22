@@ -156,26 +156,6 @@ pub fn delete_note(conn: &Connection, id: &str) -> Result<bool, NoteDbError> {
     Ok(rows_affected > 0)
 }
 
-/// Search notes by title (basic LIKE search)
-/// Note: This is kept as a fallback; primary search uses Tantivy full-text search
-#[allow(dead_code)]
-pub fn search_notes(conn: &Connection, query: &str) -> Result<Vec<Note>, NoteDbError> {
-    let search_pattern = format!("%{}%", query);
-
-    let mut stmt = conn.prepare(
-        "SELECT id, title, content, content_html, folder_id, created_at, updated_at, is_deleted
-         FROM notes 
-         WHERE (title LIKE ?1 OR content LIKE ?1) AND is_deleted = FALSE 
-         ORDER BY updated_at DESC",
-    )?;
-
-    let notes = stmt
-        .query_map([search_pattern], row_to_note)?
-        .filter_map(Result::ok)
-        .collect();
-
-    Ok(notes)
-}
 
 #[cfg(test)]
 mod tests {
@@ -251,41 +231,5 @@ mod tests {
         // But doesn't appear in get_all_notes
         let all = get_all_notes(&conn).unwrap();
         assert!(all.iter().all(|n| n.id != note.id));
-    }
-
-    #[test]
-    fn test_search_notes() {
-        let pool = init_test_pool().unwrap();
-        let conn = pool.get().unwrap();
-
-        create_note(
-            &conn,
-            CreateNoteInput {
-                title: "Meeting Notes".to_string(),
-                content: Some("Discussed project timeline".to_string()),
-                content_html: None,
-                folder_id: None,
-            },
-        )
-        .unwrap();
-
-        create_note(
-            &conn,
-            CreateNoteInput {
-                title: "Shopping List".to_string(),
-                content: Some("Milk, bread, eggs".to_string()),
-                content_html: None,
-                folder_id: None,
-            },
-        )
-        .unwrap();
-
-        let results = search_notes(&conn, "meeting").unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].title, "Meeting Notes");
-
-        let results = search_notes(&conn, "bread").unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].title, "Shopping List");
     }
 }

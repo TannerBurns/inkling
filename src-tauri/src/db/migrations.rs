@@ -31,6 +31,7 @@ pub fn run_migrations(conn: &Connection) -> Result<(), MigrationError> {
         ("009_calendar_event_type", MIGRATION_009_CALENDAR_EVENT_TYPE),
         ("010_calendar_response_status", MIGRATION_010_CALENDAR_RESPONSE_STATUS),
         ("011_calendar_attendees", MIGRATION_011_CALENDAR_ATTENDEES),
+        ("012_exports", MIGRATION_012_EXPORTS),
     ];
 
     for (name, sql) in migrations {
@@ -275,6 +276,24 @@ ALTER TABLE calendar_events ADD COLUMN attendees TEXT DEFAULT NULL;
 ALTER TABLE calendar_events ADD COLUMN meeting_link TEXT DEFAULT NULL;
 "#;
 
+const MIGRATION_012_EXPORTS: &str = r#"
+-- Exports table for tracking generated document exports
+CREATE TABLE exports (
+    id TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    title TEXT NOT NULL,
+    format TEXT NOT NULL CHECK(format IN ('pdf', 'docx', 'xlsx', 'pptx')),
+    source_note_ids TEXT,  -- JSON array of note IDs
+    file_size INTEGER,
+    path TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for export queries
+CREATE INDEX idx_exports_format ON exports(format);
+CREATE INDEX idx_exports_created_at ON exports(created_at);
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,6 +327,7 @@ mod tests {
         assert!(tables.contains(&"board_lanes".to_string()));
         assert!(tables.contains(&"board_cards".to_string()));
         assert!(tables.contains(&"calendar_events".to_string()));
+        assert!(tables.contains(&"exports".to_string()));
     }
 
     #[test]

@@ -60,18 +60,11 @@ export function ChatInput() {
     return text;
   }, []);
 
-  // Check if input has content
-  const hasContent = useCallback((): boolean => {
-    return getTextContent().trim().length > 0;
-  }, [getTextContent]);
-
   // Handle input changes
   const handleInput = useCallback(() => {
     if (!inputRef.current) return;
     
-    const text = getTextContent();
     const selection = window.getSelection();
-    
     if (!selection || selection.rangeCount === 0) {
       setShowMentions(false);
       return;
@@ -117,7 +110,7 @@ export function ChatInput() {
       setMentionQuery("");
       setMentionStartOffset(null);
     }
-  }, [getTextContent]);
+  }, []);
 
   // Insert mention badge at current position
   const insertMentionBadge = useCallback((noteId: string, noteTitle: string) => {

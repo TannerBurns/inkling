@@ -25,7 +25,6 @@ pub enum SearchError {
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     pub id: String,
-    #[allow(dead_code)]
     pub score: f32,
 }
 
@@ -189,7 +188,6 @@ impl SearchIndex {
     }
 
     /// Get the number of documents in the index
-    #[allow(dead_code)]
     pub fn doc_count(&self) -> u64 {
         let searcher = self.reader.searcher();
         searcher.num_docs()

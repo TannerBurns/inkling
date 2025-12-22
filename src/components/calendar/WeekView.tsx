@@ -462,10 +462,12 @@ export function WeekView() {
                   
                   const startHour = startTime.getHours() + startTime.getMinutes() / 60;
                   const endHour = endTime.getHours() + endTime.getMinutes() / 60;
-                  const duration = Math.max(endHour - startHour, 0.5); // Minimum 30 min display
+                  // Allow events to display their true duration - no artificial minimum
+                  const duration = endHour - startHour;
                   
                   const top = startHour * 48; // 48px per hour (h-12 = 48px)
-                  const height = duration * 48;
+                  // Calculate height based on actual duration, with a small minimum for clickability
+                  const height = Math.max(duration * 48, 16);
                   
                   if (event.allDay) {
                     return null; // All-day events shown in header
@@ -483,32 +485,33 @@ export function WeekView() {
                         e.preventDefault();
                         openContextMenu(event, { x: e.clientX, y: e.clientY });
                       }}
-                      className="absolute overflow-hidden rounded px-1 py-0.5 text-xs text-left transition-opacity hover:opacity-80"
+                      className="absolute overflow-hidden rounded px-1 py-0.5 text-left transition-opacity hover:opacity-80"
                       style={{
                         top: `${top}px`,
-                        height: `${Math.max(height, 20)}px`,
+                        height: `${height}px`,
                         left: `calc(${position.left}% + 2px)`,
                         width: `calc(${position.width}% - 4px)`,
                         backgroundColor: colors.bg,
                         borderLeft: `3px solid ${colors.border}`,
                         color: "var(--color-text-primary)",
+                        fontSize: height < 24 ? '10px' : '12px',
                       }}
-                      title={`${event.title}${event.attendees?.length ? ` • ${event.attendees.length} attendee${event.attendees.length > 1 ? "s" : ""}` : ""}`}
+                      title={`${event.title} • ${startTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} - ${endTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}
                     >
-                      <div className="flex items-center gap-1 truncate font-medium">
+                      <div className="flex items-center gap-0.5 truncate font-medium leading-tight">
                         <span className="truncate">{event.title}</span>
-                        {event.attendees && event.attendees.length > 0 && (
+                        {height >= 20 && event.attendees && event.attendees.length > 0 && (
                           <span className="flex items-center gap-0.5 flex-shrink-0" style={{ color: "var(--color-text-tertiary)" }}>
-                            <Users size={10} />
+                            <Users size={height < 24 ? 8 : 10} />
                             <span className="text-[9px]">{event.attendees.length}</span>
                           </span>
                         )}
-                        {getStatusIcon(event.responseStatus)}
+                        {height >= 20 && getStatusIcon(event.responseStatus)}
                       </div>
-                      {height > 30 && (
+                      {height > 24 && (
                         <div
-                          className="truncate"
-                          style={{ color: "var(--color-text-secondary)" }}
+                          className="truncate leading-tight"
+                          style={{ color: "var(--color-text-secondary)", fontSize: height < 30 ? '9px' : '11px' }}
                         >
                           {startTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                         </div>

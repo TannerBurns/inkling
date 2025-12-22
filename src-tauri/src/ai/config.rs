@@ -49,6 +49,34 @@ pub struct AIProvider {
     /// Currently selected model for this provider
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_model: Option<String>,
+    /// Context window size in tokens (optional, uses provider defaults if not set)
+    /// Primarily useful for local providers where context size may vary
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_length: Option<u32>,
+}
+
+/// Default context lengths by provider type (in tokens)
+impl ProviderType {
+    /// Get the default context length for this provider type
+    pub fn default_context_length(&self) -> u32 {
+        match self {
+            ProviderType::OpenAI => 200_000,      // GPT-4o supports 128K, o1 supports 200K
+            ProviderType::Anthropic => 200_000,   // Claude 3.5 supports 200K
+            ProviderType::Google => 1_000_000,    // Gemini 1.5/2.0 supports 1M
+            ProviderType::Ollama => 32_000,       // Default for most local models
+            ProviderType::LMStudio => 32_000,     // Default for most local models
+            ProviderType::VLLM => 32_000,         // Default for most local models
+            ProviderType::Custom => 32_000,       // Conservative default
+        }
+    }
+}
+
+impl AIProvider {
+    /// Get the effective context length for this provider
+    /// Returns the configured value or the provider type's default
+    pub fn effective_context_length(&self) -> u32 {
+        self.context_length.unwrap_or_else(|| self.provider_type.default_context_length())
+    }
 }
 
 impl Default for AIProvider {
@@ -62,6 +90,7 @@ impl Default for AIProvider {
             is_enabled: false,
             models: Vec::new(),
             selected_model: None,
+            context_length: None,
         }
     }
 }
@@ -137,24 +166,20 @@ impl AIConfig {
                     is_enabled: false,
                     models: vec![
                         // GPT-5 series (reasoning)
+                        "gpt-5.2".to_string(),
                         "gpt-5.1".to_string(),
                         "gpt-5".to_string(),
                         "gpt-5-mini".to_string(),
-                        // O-series (reasoning)
-                        "o4-mini".to_string(),
-                        "o3".to_string(),
-                        "o3-mini".to_string(),
-                        "o1".to_string(),
-                        "o1-mini".to_string(),
+                        "gpt-5-nano".to_string(),
                         // GPT-4.1 series
                         "gpt-4.1".to_string(),
                         "gpt-4.1-mini".to_string(),
                         // GPT-4o series
                         "gpt-4o".to_string(),
                         "gpt-4o-mini".to_string(),
-                        "gpt-4-turbo".to_string(),
                     ],
                     selected_model: None,
+                    context_length: None,
                 },
                 AIProvider {
                     id: "anthropic".to_string(),
@@ -176,6 +201,7 @@ impl AIConfig {
                         "claude-3-5-haiku-20241022".to_string(),
                     ],
                     selected_model: None,
+                    context_length: None,
                 },
                 AIProvider {
                     id: "google".to_string(),
@@ -197,6 +223,7 @@ impl AIConfig {
                         "gemini-1.5-flash".to_string(),
                     ],
                     selected_model: None,
+                    context_length: None,
                 },
                 AIProvider {
                     id: "ollama".to_string(),
@@ -207,6 +234,7 @@ impl AIConfig {
                     is_enabled: false,
                     models: Vec::new(), // Will be populated by detection
                     selected_model: None,
+                    context_length: None,
                 },
                 AIProvider {
                     id: "lmstudio".to_string(),
@@ -217,6 +245,7 @@ impl AIConfig {
                     is_enabled: false,
                     models: Vec::new(), // Will be populated by detection
                     selected_model: None,
+                    context_length: None,
                 },
                 AIProvider {
                     id: "vllm".to_string(),
@@ -227,6 +256,7 @@ impl AIConfig {
                     is_enabled: false,
                     models: Vec::new(), // Will be populated by detection
                     selected_model: None,
+                    context_length: None,
                 },
             ],
             default_provider: None,

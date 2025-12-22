@@ -661,6 +661,9 @@ function ProviderCard({
   const [showApiKey, setShowApiKey] = useState(false);
   const [apiKey, setApiKey] = useState(provider.apiKey ?? "");
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl ?? "");
+  const [contextLength, setContextLength] = useState<string>(
+    provider.contextLength?.toString() ?? ""
+  );
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<ProviderTestResult | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -683,10 +686,12 @@ function ProviderCard({
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      const parsedContextLength = contextLength ? parseInt(contextLength, 10) : undefined;
       await onUpdate({
         ...provider,
         apiKey: apiKey || undefined,
         baseUrl: baseUrl || undefined,
+        contextLength: parsedContextLength && !isNaN(parsedContextLength) ? parsedContextLength : undefined,
       });
       setIsExpanded(false);
     } finally {
@@ -981,6 +986,38 @@ function ProviderCard({
                   color: "var(--color-text-primary)",
                 }}
               />
+            </div>
+          )}
+
+          {/* Context Length input (for local providers) */}
+          {isLocal && (
+            <div className="mb-3">
+              <label
+                className="mb-1.5 block text-xs font-medium"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                Context Length (tokens)
+              </label>
+              <input
+                type="number"
+                value={contextLength}
+                onChange={(e) => setContextLength(e.target.value)}
+                placeholder="32000"
+                min="1024"
+                max="1000000"
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+                style={{
+                  backgroundColor: "var(--color-bg-primary)",
+                  borderColor: "var(--color-border)",
+                  color: "var(--color-text-primary)",
+                }}
+              />
+              <p
+                className="mt-1 text-xs"
+                style={{ color: "var(--color-text-tertiary)" }}
+              >
+                Max tokens for context window. Leave empty for default (32K).
+              </p>
             </div>
           )}
 

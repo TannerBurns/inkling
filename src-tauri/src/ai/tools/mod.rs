@@ -9,6 +9,8 @@
 #![allow(dead_code)]
 
 pub mod append_to_note;
+pub mod document_builder;
+pub mod export_notes;
 pub mod read_attachment;
 pub mod search_notes;
 pub mod web_search;
@@ -17,9 +19,14 @@ use serde::{Deserialize, Serialize};
 
 // Re-export tool implementations
 pub use append_to_note::*;
+pub use document_builder::*;
+pub use export_notes::*;
 pub use read_attachment::*;
 pub use search_notes::*;
 pub use web_search::*;
+
+/// Type alias for tool execution functions
+pub type ToolFunction = Box<dyn Fn(serde_json::Value) -> Result<String, String> + Send + Sync>;
 
 // ============================================================================
 // Agent Configuration
@@ -59,6 +66,14 @@ fn default_enabled_tools() -> Vec<String> {
         "search_notes".to_string(),
         "write_content".to_string(),
         "create_mermaid".to_string(),
+        "export_notes_pdf".to_string(),
+        "export_notes_docx".to_string(),
+        "export_selection_xlsx".to_string(),
+        "create_document".to_string(),
+        "add_section".to_string(),
+        "add_table".to_string(),
+        "save_document".to_string(),
+        "cancel_document".to_string(),
     ]
 }
 
@@ -184,6 +199,14 @@ pub fn get_all_tool_names() -> Vec<&'static str> {
         "write_content",
         "append_to_note",
         "read_attachment",
+        "export_notes_pdf",
+        "export_notes_docx",
+        "export_selection_xlsx",
+        "create_document",
+        "add_section",
+        "add_table",
+        "save_document",
+        "cancel_document",
     ]
 }
 
@@ -199,6 +222,14 @@ pub fn get_tool_description(tool_name: &str) -> &'static str {
         "write_content" => "Output markdown content to be inserted",
         "append_to_note" => "Append content to the current note in real-time",
         "read_attachment" => "Extract text from attached documents (PDF, Word, Excel, etc.)",
+        "export_notes_pdf" => "Export notes to a PDF document",
+        "export_notes_docx" => "Export notes to a Word document",
+        "export_selection_xlsx" => "Export table content to an Excel spreadsheet",
+        "create_document" => "Create a new document draft for building incrementally",
+        "add_section" => "Add a section to a document draft",
+        "add_table" => "Add a table to a document draft",
+        "save_document" => "Save a completed document draft to file",
+        "cancel_document" => "Cancel and discard a document draft",
         _ => "Unknown tool",
     }
 }

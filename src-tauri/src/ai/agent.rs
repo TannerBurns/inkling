@@ -3,8 +3,9 @@
 //! Provides a reusable agent loop that handles multi-turn conversations
 //! with function calling (tools). Agents implement the ToolExecutor trait
 //! to provide their specific tools.
-
-#![allow(dead_code)]
+//!
+//! This module now uses the LlmClient trait for all API calls, enabling
+//! proper token usage tracking and context management.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -12,41 +13,65 @@ use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
-use super::config::{AIProvider, ProviderType};
+use super::config::AIProvider;
+use super::llm::{
+    ChatMessage, ChatRequest, ChatResponse, LlmError, MessageRole,
+    ToolCall as LlmToolCall, ToolDefinition as LlmToolDefinition, TokenUsage,
+};
 
-/// Get the API URL for chat completions from a provider config
-fn get_chat_completions_url(provider: &AIProvider) -> String {
-    let base_url = provider.base_url.as_deref().unwrap_or_else(|| {
-        match provider.provider_type {
-            ProviderType::OpenAI => "https://api.openai.com",
-            ProviderType::Anthropic => "https://api.anthropic.com",
-            ProviderType::Google => "https://generativelanguage.googleapis.com",
-            ProviderType::Ollama => "http://localhost:11434",
-            ProviderType::LMStudio => "http://localhost:1234",
-            ProviderType::VLLM => "http://localhost:8000",
-            ProviderType::Custom => "http://localhost:8080",
+/// Convert agent tool definitions to LLM tool definitions
+fn convert_tools_to_llm(tools: &[ToolDefinition]) -> Vec<LlmToolDefinition> {
+    tools.iter().map(|t| LlmToolDefinition {
+        tool_type: t.tool_type.clone(),
+        function: super::llm::FunctionDefinition {
+            name: t.function.name.clone(),
+            description: t.function.description.clone(),
+            parameters: t.function.parameters.clone(),
+        },
+    }).collect()
+}
+
+/// Convert agent messages to LLM chat messages
+fn convert_messages_to_llm(messages: &[AgentMessage]) -> Vec<ChatMessage> {
+    messages.iter().map(|m| {
+        let role = match m.role.as_str() {
+            "system" => MessageRole::System,
+            "user" => MessageRole::User,
+            "assistant" => MessageRole::Assistant,
+            "tool" => MessageRole::Tool,
+            _ => MessageRole::User,
+        };
+        
+        ChatMessage {
+            role,
+            content: m.content.clone(),
+            tool_calls: m.tool_calls.as_ref().map(|calls| {
+                calls.iter().map(|c| LlmToolCall {
+                    id: c.id.clone(),
+                    call_type: c.call_type.clone().unwrap_or_else(|| "function".to_string()),
+                    function: super::llm::FunctionCall {
+                        name: c.function.name.clone(),
+                        arguments: c.function.arguments.clone(),
+                    },
+                }).collect()
+            }),
+            tool_call_id: m.tool_call_id.clone(),
         }
-    });
-    
-    let base = base_url.trim_end_matches('/');
-    
-    // Handle Anthropic and Google separately since they use different API formats
-    match provider.provider_type {
-        ProviderType::Anthropic => format!("{}/v1/messages", base),
-        ProviderType::Google => {
-            // Google requires API key in URL and different format
-            // For now, return a placeholder - agents should use OpenAI-compatible providers
-            format!("{}/v1/chat/completions", base)
-        }
-        _ => {
-            // OpenAI-compatible providers (OpenAI, Ollama, LMStudio, VLLM, Custom)
-            if base.ends_with("/v1") {
-                format!("{}/chat/completions", base)
-            } else {
-                format!("{}/v1/chat/completions", base)
-            }
-        }
-    }
+    }).collect()
+}
+
+/// Extract tool calls from LLM response
+fn extract_tool_calls_from_response(response: &ChatResponse) -> Option<Vec<ToolCall>> {
+    response.tool_calls.as_ref().map(|calls| {
+        calls.iter().map(|c| ToolCall {
+            id: c.id.clone(),
+            function: FunctionCall {
+                name: c.function.name.clone(),
+                arguments: c.function.arguments.clone(),
+            },
+            call_type: Some(c.call_type.clone()),
+        }).collect()
+    })
 }
 
 /// Errors that can occur during agent execution
@@ -64,6 +89,26 @@ pub enum AgentError {
     ApiError(String),
     #[error("Agent execution was cancelled")]
     Cancelled,
+    #[error("LLM error: {0}")]
+    LlmError(String),
+    #[error("Provider not configured: {0}")]
+    NotConfigured(String),
+}
+
+impl From<LlmError> for AgentError {
+    fn from(err: LlmError) -> Self {
+        match err {
+            LlmError::HttpError(e) => AgentError::HttpError(e.to_string()),
+            LlmError::ApiError { status, message } => {
+                AgentError::ApiError(format!("HTTP {}: {}", status, message))
+            }
+            LlmError::MissingApiKey => AgentError::NotConfigured("Missing API key".to_string()),
+            LlmError::InvalidResponse(msg) => AgentError::ParseError(msg),
+            LlmError::StreamError(msg) => AgentError::LlmError(msg),
+            LlmError::NotConfigured(msg) => AgentError::NotConfigured(msg),
+            LlmError::Unsupported(msg) => AgentError::LlmError(msg),
+        }
+    }
 }
 
 // ============================================================================
@@ -225,16 +270,6 @@ impl AgentMessage {
         }
     }
 
-    /// Create an assistant message with content
-    pub fn assistant(content: &str) -> Self {
-        Self {
-            role: "assistant".to_string(),
-            content: Some(content.to_string()),
-            tool_calls: None,
-            tool_call_id: None,
-        }
-    }
-
     /// Create an assistant message with tool calls (no content)
     pub fn assistant_tool_calls(tool_calls: Vec<ToolCall>) -> Self {
         Self {
@@ -256,6 +291,27 @@ impl AgentMessage {
     }
 }
 
+/// Cumulative token usage across all iterations
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CumulativeTokenUsage {
+    /// Total prompt tokens across all requests
+    pub total_prompt_tokens: u32,
+    /// Total completion tokens across all requests
+    pub total_completion_tokens: u32,
+    /// Total tokens (prompt + completion)
+    pub total_tokens: u32,
+}
+
+impl CumulativeTokenUsage {
+    /// Add usage from a single response
+    pub fn add(&mut self, usage: &TokenUsage) {
+        self.total_prompt_tokens += usage.prompt_tokens;
+        self.total_completion_tokens += usage.completion_tokens;
+        self.total_tokens += usage.total_tokens;
+    }
+}
+
 /// Result of running an agent
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -266,6 +322,9 @@ pub struct AgentResult {
     pub tool_calls_made: Vec<ToolCallRecord>,
     /// Number of LLM iterations
     pub iterations: usize,
+    /// Cumulative token usage across all iterations
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_usage: Option<CumulativeTokenUsage>,
 }
 
 /// Record of a tool call and its result
@@ -287,44 +346,14 @@ pub trait ToolExecutor: Send + Sync {
     async fn execute(&self, name: &str, args: Value) -> Result<String, String>;
 }
 
-/// Chat completion request body
-#[derive(Debug, Serialize)]
-struct ChatCompletionRequest {
-    model: String,
-    messages: Vec<AgentMessage>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tools: Option<Vec<ToolDefinition>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tool_choice: Option<String>,
-}
-
-/// Chat completion response
-#[derive(Debug, Deserialize)]
-struct ChatCompletionResponse {
-    choices: Vec<ChatChoice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ChatChoice {
-    message: ChatMessageResponse,
-    finish_reason: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ChatMessageResponse {
-    role: String,
-    content: Option<String>,
-    tool_calls: Option<Vec<ToolCall>>,
-}
-
 /// Run an agent with the given configuration
 ///
 /// This function implements the core agent loop:
-/// 1. Send messages + tools to LLM
+/// 1. Send messages + tools to LLM via LlmClient
 /// 2. If response has tool_calls, execute each tool
 /// 3. Add tool results as tool role messages
 /// 4. Repeat until LLM responds with content only (no tool calls)
-/// 5. Return final response + all tool calls made
+/// 5. Return final response + all tool calls made + token usage
 pub async fn run_agent<E: ToolExecutor>(
     provider: &AIProvider,
     model: &str,
@@ -334,8 +363,8 @@ pub async fn run_agent<E: ToolExecutor>(
     executor: &E,
     max_iterations: usize,
 ) -> Result<AgentResult, AgentError> {
-    let client = reqwest::Client::new();
-    let api_url = get_chat_completions_url(provider);
+    // Create LLM client from provider config
+    let client = super::llm::create_client(provider)?;
     
     // Initialize message history
     let mut messages = vec![
@@ -344,7 +373,11 @@ pub async fn run_agent<E: ToolExecutor>(
     ];
     
     let mut all_tool_calls: Vec<ToolCallRecord> = Vec::new();
+    let mut cumulative_usage = CumulativeTokenUsage::default();
     let mut iterations = 0;
+    
+    // Convert tools once
+    let llm_tools = convert_tools_to_llm(&tools);
     
     loop {
         iterations += 1;
@@ -352,48 +385,36 @@ pub async fn run_agent<E: ToolExecutor>(
             return Err(AgentError::MaxIterationsExceeded(max_iterations));
         }
         
-        // Build request
-        let request = ChatCompletionRequest {
+        // Build request using LlmClient types
+        let request = ChatRequest {
             model: model.to_string(),
-            messages: messages.clone(),
-            tools: if tools.is_empty() { None } else { Some(tools.clone()) },
-            tool_choice: if tools.is_empty() { None } else { Some("auto".to_string()) },
+            messages: convert_messages_to_llm(&messages),
+            tools: if llm_tools.is_empty() { None } else { Some(llm_tools.clone()) },
+            tool_choice: if llm_tools.is_empty() { None } else { Some("auto".to_string()) },
+            max_tokens: None,
+            temperature: None,
+            stream: false,
+            enable_reasoning: false,
+            reasoning_effort: None,
+            thinking_budget: None,
         };
         
-        // Send request to provider
-        let mut req = client.post(&api_url).json(&request);
+        // Call via LlmClient - this handles all provider-specific formatting
+        let response = client.chat(request).await?;
         
-        // Add API key header if required
-        if let Some(ref api_key) = provider.api_key {
-            req = req.header("Authorization", format!("Bearer {}", api_key));
+        // Track token usage
+        if let Some(ref usage) = response.usage {
+            cumulative_usage.add(usage);
         }
-        
-        let response = req
-            .send()
-            .await
-            .map_err(|e| AgentError::HttpError(e.to_string()))?;
-        
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(AgentError::ApiError(error_text));
-        }
-        
-        let completion: ChatCompletionResponse = response
-            .json()
-            .await
-            .map_err(|e| AgentError::ParseError(e.to_string()))?;
-        
-        let choice = completion.choices.first()
-            .ok_or_else(|| AgentError::ParseError("No choices in response".to_string()))?;
         
         // Check if there are tool calls
-        if let Some(ref tool_calls) = choice.message.tool_calls {
+        if let Some(tool_calls) = extract_tool_calls_from_response(&response) {
             if !tool_calls.is_empty() {
                 // Add the assistant message with tool calls to history
                 messages.push(AgentMessage::assistant_tool_calls(tool_calls.clone()));
                 
                 // Execute each tool call
-                for tool_call in tool_calls {
+                for tool_call in &tool_calls {
                     let args: Value = serde_json::from_str(&tool_call.function.arguments)
                         .unwrap_or(Value::Object(serde_json::Map::new()));
                     
@@ -425,12 +446,13 @@ pub async fn run_agent<E: ToolExecutor>(
         }
         
         // No tool calls - we have the final response
-        let final_response = choice.message.content.clone().unwrap_or_default();
+        let final_response = response.content;
         
         return Ok(AgentResult {
             final_response,
             tool_calls_made: all_tool_calls,
             iterations,
+            token_usage: Some(cumulative_usage),
         });
     }
 }
@@ -468,8 +490,15 @@ pub async fn run_agent_with_events<E: ToolExecutor>(
     use tauri::Emitter;
     
     let event_name = format!("agent-progress-{}", execution_id);
-    let client = reqwest::Client::new();
-    let api_url = get_chat_completions_url(provider);
+    
+    // Create LLM client from provider config
+    let client = super::llm::create_client(provider).map_err(|e| {
+        let error = AgentError::from(e);
+        let _ = app_handle.emit(&event_name, &AgentProgress::Error {
+            message: error.to_string(),
+        });
+        error
+    })?;
     
     // Helper to emit progress events
     let emit_progress = |progress: AgentProgress| {
@@ -499,7 +528,11 @@ pub async fn run_agent_with_events<E: ToolExecutor>(
     ];
     
     let mut all_tool_calls: Vec<ToolCallRecord> = Vec::new();
+    let mut cumulative_usage = CumulativeTokenUsage::default();
     let mut iterations = 0;
+    
+    // Convert tools once
+    let llm_tools = convert_tools_to_llm(&tools);
     
     loop {
         check_cancelled()?;
@@ -517,72 +550,44 @@ pub async fn run_agent_with_events<E: ToolExecutor>(
             message: format!("Processing (iteration {})...", iterations),
         });
         
-        // Build request
-        let request = ChatCompletionRequest {
+        // Build request using LlmClient types
+        let request = ChatRequest {
             model: model.to_string(),
-            messages: messages.clone(),
-            tools: if tools.is_empty() { None } else { Some(tools.clone()) },
-            tool_choice: if tools.is_empty() { None } else { Some("auto".to_string()) },
+            messages: convert_messages_to_llm(&messages),
+            tools: if llm_tools.is_empty() { None } else { Some(llm_tools.clone()) },
+            tool_choice: if llm_tools.is_empty() { None } else { Some("auto".to_string()) },
+            max_tokens: None,
+            temperature: None,
+            stream: false,
+            enable_reasoning: false,
+            reasoning_effort: None,
+            thinking_budget: None,
         };
         
-        // Send request to provider
-        let mut req = client.post(&api_url).json(&request);
-        
-        // Add API key header if required
-        if let Some(ref api_key) = provider.api_key {
-            req = req.header("Authorization", format!("Bearer {}", api_key));
-        }
-        
-        let response = req
-            .send()
-            .await
-            .map_err(|e| {
-                let error = AgentError::HttpError(e.to_string());
-                emit_progress(AgentProgress::Error {
-                    message: error.to_string(),
-                });
-                error
-            })?;
-        
-        check_cancelled()?;
-        
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            let error = AgentError::ApiError(error_text);
+        // Call via LlmClient
+        let response = client.chat(request).await.map_err(|e| {
+            let error = AgentError::from(e);
             emit_progress(AgentProgress::Error {
                 message: error.to_string(),
             });
-            return Err(error);
+            error
+        })?;
+        
+        check_cancelled()?;
+        
+        // Track token usage
+        if let Some(ref usage) = response.usage {
+            cumulative_usage.add(usage);
         }
         
-        let completion: ChatCompletionResponse = response
-            .json()
-            .await
-            .map_err(|e| {
-                let error = AgentError::ParseError(e.to_string());
-                emit_progress(AgentProgress::Error {
-                    message: error.to_string(),
-                });
-                error
-            })?;
-        
-        let choice = completion.choices.first()
-            .ok_or_else(|| {
-                let error = AgentError::ParseError("No choices in response".to_string());
-                emit_progress(AgentProgress::Error {
-                    message: error.to_string(),
-                });
-                error
-            })?;
-        
         // Check if there are tool calls
-        if let Some(ref tool_calls) = choice.message.tool_calls {
+        if let Some(tool_calls) = extract_tool_calls_from_response(&response) {
             if !tool_calls.is_empty() {
                 // Add the assistant message with tool calls to history
                 messages.push(AgentMessage::assistant_tool_calls(tool_calls.clone()));
                 
                 // Execute each tool call
-                for tool_call in tool_calls {
+                for tool_call in &tool_calls {
                     check_cancelled()?;
                     
                     let args: Value = serde_json::from_str(&tool_call.function.arguments)
@@ -635,12 +640,13 @@ pub async fn run_agent_with_events<E: ToolExecutor>(
         }
         
         // No tool calls - we have the final response
-        let final_response = choice.message.content.clone().unwrap_or_default();
+        let final_response = response.content;
         
         let result = AgentResult {
             final_response,
             tool_calls_made: all_tool_calls,
             iterations,
+            token_usage: Some(cumulative_usage),
         };
         
         // Emit completed event

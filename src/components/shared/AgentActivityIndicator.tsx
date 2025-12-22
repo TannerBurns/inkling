@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bot, Tag, Brain, Sparkles, FileText, Search, X } from "lucide-react";
+import { Bot, Tag, Brain, Sparkles, FileText, Search, X, Download } from "lucide-react";
 import { useAgentActivityStore, type RunningAgent } from "../../stores/agentActivityStore";
 
 function getAgentIcon(type: RunningAgent["type"]) {
@@ -14,6 +14,8 @@ function getAgentIcon(type: RunningAgent["type"]) {
       return FileText;
     case "research":
       return Search;
+    case "export":
+      return Download;
     default:
       return Bot;
   }
@@ -31,6 +33,8 @@ function getAgentLabel(type: RunningAgent["type"]) {
       return "Summarizing";
     case "research":
       return "Researching";
+    case "export":
+      return "Exporting";
     default:
       return "Agent";
   }
@@ -162,7 +166,15 @@ export function AgentActivityIndicator() {
                         >
                           {getAgentLabel(agent.type)}
                         </div>
-                        {agent.noteTitle && (
+                        {agent.description && (
+                          <div
+                            className="truncate text-xs"
+                            style={{ color: "var(--color-text-tertiary)" }}
+                          >
+                            {agent.description}
+                          </div>
+                        )}
+                        {agent.noteTitle && !agent.description && (
                           <div
                             className="truncate text-xs"
                             style={{ color: "var(--color-text-tertiary)" }}

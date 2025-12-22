@@ -15,6 +15,7 @@ import {
   CalendarPlus,
   Copy,
   Plus,
+  Download,
 } from "lucide-react";
 import {
   useFolderStore,
@@ -26,6 +27,7 @@ import { useBoardStore } from "../../stores/boardStore";
 import { useEditorGroupStore, useActiveTab } from "../../stores/editorGroupStore";
 import { useDragStore } from "../../stores/dragStore";
 import { useDailyNotesStore } from "../../stores/dailyNotesStore";
+import { useExportStore } from "../../stores/exportStore";
 import type { Note } from "../../types/note";
 import type { Folder } from "../../types/note";
 import type { Board } from "../../types/board";
@@ -63,6 +65,7 @@ export function Sidebar() {
   const selectedNoteId = activeTab?.type === "note" ? activeTab.id : null;
   const { isDragging, draggedNoteId, endDrag, startDrag } = useDragStore();
   const { openTodayNote, isLoading: isDailyNoteLoading } = useDailyNotesStore();
+  const { openExportModal } = useExportStore();
   const folderTree = useFolderTree();
 
   // Fetch boards on mount
@@ -382,6 +385,11 @@ export function Sidebar() {
     } catch (error) {
       console.error("Failed to duplicate note:", error);
     }
+  };
+
+  const handleExportNote = (note: Note) => {
+    setNoteContextMenu(null);
+    openExportModal([note.id]);
   };
 
   const handleRenameNote = async () => {
@@ -749,6 +757,7 @@ export function Sidebar() {
           y={noteContextMenu.y}
           onRename={() => handleStartRenameNote(noteContextMenu.note)}
           onDuplicate={() => handleDuplicateNote(noteContextMenu.note)}
+          onExport={() => handleExportNote(noteContextMenu.note)}
           onDelete={() => handleDeleteNote(noteContextMenu.note)}
         />
       )}
@@ -1512,10 +1521,11 @@ interface NoteContextMenuProps {
   y: number;
   onRename: () => void;
   onDuplicate: () => void;
+  onExport: () => void;
   onDelete: () => void;
 }
 
-function NoteContextMenu({ x, y, onRename, onDuplicate, onDelete }: NoteContextMenuProps) {
+function NoteContextMenu({ x, y, onRename, onDuplicate, onExport, onDelete }: NoteContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Adjust position to keep menu in viewport
@@ -1574,6 +1584,24 @@ function NoteContextMenu({ x, y, onRename, onDuplicate, onDelete }: NoteContextM
         <Copy size={14} />
         Duplicate
       </button>
+      <button
+        onClick={onExport}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors"
+        style={{ color: "var(--color-text-primary)" }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = "transparent";
+        }}
+      >
+        <Download size={14} />
+        Export...
+      </button>
+      <div 
+        className="my-1 border-t"
+        style={{ borderColor: "var(--color-border)" }}
+      />
       <button
         onClick={onDelete}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors"

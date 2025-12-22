@@ -1,6 +1,7 @@
 mod ai;
 mod commands;
 mod db;
+mod exports;
 mod google;
 mod models;
 mod search;
@@ -62,6 +63,13 @@ fn initialize_for_vault() -> Result<(DbPool, Arc<SearchIndex>), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize logger - show info level and above for our crate, warn for others
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("inkling_lib=debug,warn")
+    )
+    .format_timestamp_secs()
+    .init();
+
     // Try to load vault path from config
     if let Ok(Some(vault_path)) = vault::load_vault_path() {
         log::info!("Loaded vault path: {:?}", vault_path);
@@ -262,6 +270,21 @@ pub fn run() {
             commands::clear_google_credentials,
             commands::get_google_credential_source,
             commands::get_current_google_credentials,
+            // Export commands
+            commands::list_exports,
+            commands::list_exports_by_format,
+            commands::get_export,
+            commands::delete_export,
+            commands::open_export,
+            commands::get_exports_path,
+            commands::reveal_exports_folder,
+            commands::export_note_to_pdf,
+            commands::export_note_to_docx,
+            commands::export_notes_to_pdf,
+            commands::export_notes_to_docx,
+            commands::export_content_to_xlsx,
+            commands::export_notes_to_pptx,
+            commands::run_export_agent_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
