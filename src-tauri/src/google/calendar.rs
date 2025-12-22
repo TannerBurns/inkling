@@ -10,7 +10,7 @@ use thiserror::Error;
 
 use crate::db::calendar_events;
 use crate::db::connection::DbPool;
-use crate::models::{CalendarEvent, CalendarEventSource, CreateCalendarEventInput};
+use crate::models::{CalendarEvent, CreateCalendarEventInput};
 
 use super::oauth::{refresh_token_if_needed_with_pool, urlencoding, GoogleAuthError};
 
@@ -301,24 +301,27 @@ pub async fn sync_events_to_db_with_pool(
         events_removed: 0,
     };
     
-    // Get existing Google events in this date range
-    let existing_events = calendar_events::get_events_in_range(&conn, start, end)
+    // First, clean up any existing duplicate events from previous syncs
+    let duplicates_removed = calendar_events::cleanup_duplicate_google_events(&conn)
         .map_err(|e| GoogleCalendarError::DbError(e.to_string()))?;
+    if duplicates_removed > 0 {
+        result.events_removed += duplicates_removed;
+    }
     
-    let existing_google_events: std::collections::HashMap<String, _> = existing_events
-        .into_iter()
-        .filter(|e| e.event.source == CalendarEventSource::Google)
-        .filter_map(|e| e.event.external_id.clone().map(|id| (id, e.event)))
-        .collect();
-    
-    let mut seen_ids = std::collections::HashSet::new();
+    // Build a set of Google event IDs we receive from Google for this date range
+    let mut google_event_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     
     // Upsert events from Google
     for google_event in &google_events {
-        seen_ids.insert(google_event.id.clone());
+        google_event_ids.insert(google_event.id.clone());
         
         if let Some(input) = google_event_to_internal(google_event) {
-            if let Some(existing) = existing_google_events.get(&google_event.id) {
+            // Check for existing event by external_id across ALL events (not just date range)
+            // This prevents duplicates when all-day events have timezone edge cases
+            let existing = calendar_events::get_event_by_external_id(&conn, &google_event.id)
+                .map_err(|e| GoogleCalendarError::DbError(e.to_string()))?;
+            
+            if let Some(existing_event) = existing {
                 // Update existing event
                 let update = crate::models::UpdateCalendarEventInput {
                     title: Some(input.title),
@@ -334,7 +337,7 @@ pub async fn sync_events_to_db_with_pool(
                     meeting_link: input.meeting_link,
                 };
                 
-                if calendar_events::update_event(&conn, &existing.id, update).is_ok() {
+                if calendar_events::update_event(&conn, &existing_event.id, update).is_ok() {
                     result.events_updated += 1;
                 }
             } else {
@@ -346,11 +349,22 @@ pub async fn sync_events_to_db_with_pool(
         }
     }
     
-    // Remove Google events that no longer exist
-    for (external_id, event) in &existing_google_events {
-        if !seen_ids.contains(external_id) {
-            if calendar_events::delete_event(&conn, &event.id).is_ok() {
-                result.events_removed += 1;
+    // Remove Google events that are in our database but no longer exist in Google for this date range
+    // We check ALL our Google events and remove ones whose start_time falls within the sync range
+    // but were not returned by Google (meaning they were deleted or moved)
+    let all_our_google_events = calendar_events::get_all_google_events(&conn)
+        .map_err(|e| GoogleCalendarError::DbError(e.to_string()))?;
+    
+    for event in all_our_google_events {
+        // Only consider events whose start_time is within the sync range
+        if event.start_time >= start && event.start_time < end {
+            if let Some(ref external_id) = event.external_id {
+                // If this event wasn't returned by Google, it was deleted
+                if !google_event_ids.contains(external_id) {
+                    if calendar_events::delete_event(&conn, &event.id).is_ok() {
+                        result.events_removed += 1;
+                    }
+                }
             }
         }
     }

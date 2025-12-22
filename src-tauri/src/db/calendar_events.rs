@@ -277,6 +277,54 @@ pub fn delete_event(conn: &Connection, id: &str) -> Result<bool, CalendarEventDb
     Ok(rows_affected > 0)
 }
 
+/// Get a calendar event by its external_id (for Google sync deduplication)
+pub fn get_event_by_external_id(conn: &Connection, external_id: &str) -> Result<Option<CalendarEvent>, CalendarEventDbError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, title, description, start_time, end_time, all_day, recurrence_rule, source, external_id, linked_note_id, event_type, response_status, attendees, meeting_link, created_at, updated_at
+         FROM calendar_events WHERE external_id = ?1",
+    )?;
+
+    let event = stmt.query_row([external_id], row_to_event).optional()?;
+    Ok(event)
+}
+
+/// Get all Google calendar events (for sync cleanup)
+pub fn get_all_google_events(conn: &Connection) -> Result<Vec<CalendarEvent>, CalendarEventDbError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, title, description, start_time, end_time, all_day, recurrence_rule, source, external_id, linked_note_id, event_type, response_status, attendees, meeting_link, created_at, updated_at
+         FROM calendar_events WHERE source = 'google' ORDER BY start_time ASC",
+    )?;
+
+    let events = stmt
+        .query_map([], row_to_event)?
+        .filter_map(Result::ok)
+        .collect();
+
+    Ok(events)
+}
+
+/// Remove duplicate Google events, keeping the one with the most recent updated_at
+/// Returns the number of duplicates removed
+pub fn cleanup_duplicate_google_events(conn: &Connection) -> Result<usize, CalendarEventDbError> {
+    // Find and delete duplicates, keeping the one with the newest updated_at (or first by id if same)
+    let deleted = conn.execute(
+        "DELETE FROM calendar_events 
+         WHERE source = 'google' 
+         AND id NOT IN (
+             SELECT id FROM (
+                 SELECT id, external_id,
+                        ROW_NUMBER() OVER (PARTITION BY external_id ORDER BY updated_at DESC, id) as rn
+                 FROM calendar_events
+                 WHERE source = 'google' AND external_id IS NOT NULL
+             ) WHERE rn = 1
+         )
+         AND external_id IS NOT NULL",
+        [],
+    )?;
+    
+    Ok(deleted)
+}
+
 /// Link a note to a calendar event
 pub fn link_note_to_event(
     conn: &Connection,
