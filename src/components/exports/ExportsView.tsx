@@ -112,7 +112,7 @@ function ConfirmDeleteModal({ isOpen, exportTitle, onConfirm, onCancel, isDeleti
               className="mt-2 text-sm"
               style={{ color: 'var(--color-text-secondary)' }}
             >
-              Are you sure you want to delete "{exportTitle}"? This action cannot be undone.
+              Are you sure you want to delete &ldquo;{exportTitle}&rdquo;? This action cannot be undone.
             </p>
           </div>
           <button

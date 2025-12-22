@@ -10,18 +10,18 @@ import { CheckCircle, XCircle, X, FileText, File, Presentation, FileSpreadsheet 
 import { useExportStore, type CompletedExport } from '../../stores/exportStore';
 import type { ExportFormat } from '../../types';
 
-function getFormatIcon(format: ExportFormat) {
+function FormatIcon({ format, size, style }: { format: ExportFormat; size: number; style?: React.CSSProperties }) {
   switch (format) {
     case 'pdf':
-      return FileText;
+      return <FileText size={size} style={style} />;
     case 'docx':
-      return File;
+      return <File size={size} style={style} />;
     case 'pptx':
-      return Presentation;
+      return <Presentation size={size} style={style} />;
     case 'xlsx':
-      return FileSpreadsheet;
+      return <FileSpreadsheet size={size} style={style} />;
     default:
-      return FileText;
+      return <FileText size={size} style={style} />;
   }
 }
 
@@ -39,8 +39,6 @@ function ExportToast({ export_: completedExport }: { export_: CompletedExport })
     setIsVisible(false);
     setTimeout(() => dismissCompletedExport(completedExport.id), 200);
   };
-
-  const FormatIcon = getFormatIcon(completedExport.format);
 
   return (
     <div
@@ -72,6 +70,7 @@ function ExportToast({ export_: completedExport }: { export_: CompletedExport })
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <FormatIcon
+            format={completedExport.format}
             size={14}
             style={{ color: 'var(--color-text-tertiary)' }}
           />

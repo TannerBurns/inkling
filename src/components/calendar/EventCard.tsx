@@ -3,6 +3,7 @@ import type { CalendarEventWithNote, EventResponseStatus } from "../../types/cal
 import { parseRecurrenceRule } from "../../types/calendar";
 import { useCalendarStore } from "../../stores/calendarStore";
 import { useEditorGroupStore } from "../../stores/editorGroupStore";
+import { openUrl } from "../../lib/tauri";
 
 /**
  * Get response status display info
@@ -313,10 +314,7 @@ export function EventCard({ event, compact = false }: EventCardProps) {
       
       {/* Meeting link */}
       {event.meetingLink && (
-        <a
-          href={event.meetingLink}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
           className="mb-3 flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors"
           style={{
             backgroundColor: "rgba(66, 133, 244, 0.1)",
@@ -328,11 +326,14 @@ export function EventCard({ event, compact = false }: EventCardProps) {
           onMouseLeave={(e) => {
             e.currentTarget.style.backgroundColor = "rgba(66, 133, 244, 0.1)";
           }}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            openUrl(event.meetingLink!);
+          }}
         >
           <Video size={14} />
           <span>Join meeting</span>
-        </a>
+        </button>
       )}
       
       {/* Description */}

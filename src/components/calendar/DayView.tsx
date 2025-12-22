@@ -153,6 +153,7 @@ export function DayView() {
   const timedEvents = events.filter((e) => !e.allDay);
   
   // Calculate positions for overlapping events
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const eventPositions = useMemo(() => calculateEventPositions(events), [events]);
   
   return (

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { X, Calendar, Clock, FileText, Repeat, Link, Unlink, Chrome, Users, Video } from "lucide-react";
 import { useCalendarStore } from "../../stores/calendarStore";
 import { useNoteStore } from "../../stores/noteStore";
+import { openUrl } from "../../lib/tauri";
 import type {
   CalendarEventWithNote,
   CreateCalendarEventInput,
@@ -139,6 +140,7 @@ export function EventModal({ event, defaultDate, onClose }: EventModalProps) {
   const [recurrence, setRecurrence] = useState<RecurrenceFrequency>(() => {
     return getFrequencyFromRule(event?.recurrenceRule || null);
   });
+  const [meetingLink, setMeetingLink] = useState(event?.meetingLink || "");
   const [linkedNoteId, setLinkedNoteId] = useState<string | null>(event?.linkedNoteId || null);
   const [shouldCreateNote, setShouldCreateNote] = useState(false); // Flag to create note on submit
   const [showNotePicker, setShowNotePicker] = useState(false);
@@ -193,18 +195,20 @@ export function EventModal({ event, defaultDate, onClose }: EventModalProps) {
         if (note) {
           noteIdToLink = note.id;
           
-          // For Google events, populate note with meeting info template using stored attendees/link
-          if (event?.source === "google" && event.id) {
-            // Use the attendees and meeting link directly from the event data
-            const attendeeNames = event.attendees?.map(a => a.name || a.email) || [];
+          // Populate note with meeting info template
+          // For Google events, use attendees; for manual events, still include meeting link if provided
+          const attendeeNames = event?.attendees?.map(a => a.name || a.email) || [];
+          const currentMeetingLink = meetingLink.trim() || null;
+          
+          if (attendeeNames.length > 0 || currentMeetingLink || description.trim()) {
             const noteContent = generateMeetingNoteContent(
               noteTitle,
               startDateTime,
               endDateTime,
               allDay,
               attendeeNames,
-              event.meetingLink || null,
-              event.description || null
+              currentMeetingLink,
+              description.trim() || null
             );
             await updateNote(note.id, { content: noteContent });
           }
@@ -221,6 +225,7 @@ export function EventModal({ event, defaultDate, onClose }: EventModalProps) {
           allDay,
           recurrenceRule: generateRecurrenceRule(recurrence),
           linkedNoteId: noteIdToLink,
+          meetingLink: meetingLink.trim() || null,
         };
         await updateCalendarEvent(event.id, input);
       } else {
@@ -233,6 +238,7 @@ export function EventModal({ event, defaultDate, onClose }: EventModalProps) {
           allDay,
           recurrenceRule: generateRecurrenceRule(recurrence),
           linkedNoteId: noteIdToLink,
+          meetingLink: meetingLink.trim() || null,
         };
         await createEvent(input);
       }
@@ -517,38 +523,52 @@ export function EventModal({ event, defaultDate, onClose }: EventModalProps) {
             </div>
           )}
           
-          {/* Meeting Link (for Google events) */}
-          {event?.meetingLink && (
-            <div className="mb-4">
-              <label
-                className="mb-1.5 flex items-center gap-1.5 text-sm font-medium"
-                style={{ color: "var(--color-text-secondary)" }}
-              >
-                <Video size={14} />
-                Meeting Link
-              </label>
-              <a
-                href={event.meetingLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors"
+          {/* Meeting Link */}
+          <div className="mb-4">
+            <label
+              className="mb-1.5 flex items-center gap-1.5 text-sm font-medium"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              <Video size={14} />
+              Meeting Link
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={meetingLink}
+                onChange={(e) => setMeetingLink(e.target.value)}
+                placeholder="https://meet.google.com/... or Zoom link"
+                className="flex-1 rounded-md border px-3 py-2 text-sm"
                 style={{
-                  backgroundColor: "rgba(66, 133, 244, 0.1)",
-                  borderColor: "rgba(66, 133, 244, 0.3)",
-                  color: "#4285f4",
+                  backgroundColor: "var(--color-bg-secondary)",
+                  borderColor: "var(--color-border)",
+                  color: "var(--color-text-primary)",
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "rgba(66, 133, 244, 0.2)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "rgba(66, 133, 244, 0.1)";
-                }}
-              >
-                <Video size={14} />
-                Join meeting
-              </a>
+              />
+              {meetingLink && (
+                <button
+                  type="button"
+                  onClick={() => openUrl(meetingLink)}
+                  className="flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors"
+                  style={{
+                    backgroundColor: "rgba(66, 133, 244, 0.1)",
+                    borderColor: "rgba(66, 133, 244, 0.3)",
+                    color: "#4285f4",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "rgba(66, 133, 244, 0.2)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "rgba(66, 133, 244, 0.1)";
+                  }}
+                  title="Open meeting link in browser"
+                >
+                  <Video size={14} />
+                  Join
+                </button>
+              )}
             </div>
-          )}
+          </div>
           
           {/* Description */}
           <div className="mb-4">

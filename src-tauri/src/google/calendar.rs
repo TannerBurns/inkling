@@ -63,6 +63,28 @@ pub struct GoogleCalendarEvent {
     /// Event type: "default", "outOfOffice", "focusTime", "workingLocation"
     #[serde(rename = "eventType")]
     pub event_type: Option<String>,
+    /// Conference data (for Zoom, Teams, Meet, etc.)
+    #[serde(rename = "conferenceData")]
+    pub conference_data: Option<GoogleConferenceData>,
+}
+
+/// Google Calendar conference data (for video meetings)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleConferenceData {
+    #[serde(rename = "entryPoints")]
+    pub entry_points: Option<Vec<GoogleConferenceEntryPoint>>,
+}
+
+/// Conference entry point (video link, phone, etc.)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleConferenceEntryPoint {
+    /// Type of entry point: "video", "phone", "sip", "more"
+    #[serde(rename = "entryPointType")]
+    pub entry_point_type: Option<String>,
+    /// The URI to join (e.g., https://meet.google.com/xxx or https://zoom.us/j/xxx)
+    pub uri: Option<String>,
+    /// Label for the entry point
+    pub label: Option<String>,
 }
 
 /// Google Calendar date/time representation
@@ -248,8 +270,18 @@ fn google_event_to_internal(event: &GoogleCalendarEvent) -> Option<CreateCalenda
         }
     }
     
-    // Get meeting link
-    let meeting_link = event.hangout_link.clone();
+    // Get meeting link - check hangoutLink first, then conferenceData entry points
+    let meeting_link = event.hangout_link.clone().or_else(|| {
+        // Look for a video entry point in conferenceData
+        event.conference_data.as_ref().and_then(|conf| {
+            conf.entry_points.as_ref().and_then(|entry_points| {
+                // Find the first "video" entry point
+                entry_points.iter()
+                    .find(|ep| ep.entry_point_type.as_deref() == Some("video"))
+                    .and_then(|ep| ep.uri.clone())
+            })
+        })
+    });
     
     // Build recurrence rule
     let recurrence_rule = event.recurrence.as_ref().and_then(|rules| {

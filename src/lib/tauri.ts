@@ -2,6 +2,7 @@
  * Typed wrappers for Tauri IPC commands
  */
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl as tauriOpenUrl } from "@tauri-apps/plugin-opener";
 import type {
   Note,
   Folder,
@@ -427,4 +428,22 @@ export async function unlinkNoteFromCalendarEvent(
   eventId: string
 ): Promise<CalendarEvent> {
   return invoke<CalendarEvent>("unlink_note_from_calendar_event", { eventId });
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/**
+ * Open a URL in the system's default browser
+ * Use this instead of anchor tags with target="_blank" in Tauri apps
+ */
+export async function openUrl(url: string): Promise<void> {
+  try {
+    await tauriOpenUrl(url);
+  } catch (error) {
+    console.error("Failed to open URL:", error);
+    // Fallback: try window.open (works in dev mode)
+    window.open(url, "_blank");
+  }
 }

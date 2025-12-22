@@ -73,6 +73,7 @@ export interface CreateCalendarEventInput {
   allDay: boolean;
   recurrenceRule?: string | null;
   linkedNoteId?: string | null;
+  meetingLink?: string | null; // Video call link (optional for manual events)
 }
 
 /**
@@ -88,6 +89,7 @@ export interface UpdateCalendarEventInput {
   linkedNoteId?: string | null;
   eventType?: CalendarEventType | null;
   responseStatus?: EventResponseStatus | null;
+  meetingLink?: string | null; // Video call link
 }
 
 /**

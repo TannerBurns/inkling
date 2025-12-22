@@ -199,7 +199,7 @@ export function CalendarHeader() {
         {/* New event button */}
         <button
           onClick={() => setShowNewEventModal(true)}
-          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+          className="flex items-center justify-center rounded-md p-1.5 transition-colors"
           style={{
             backgroundColor: "var(--color-accent)",
             color: "white",
@@ -210,9 +210,9 @@ export function CalendarHeader() {
           onMouseLeave={(e) => {
             e.currentTarget.style.opacity = "1";
           }}
+          title="New Event"
         >
-          <Plus size={16} />
-          New Event
+          <Plus size={18} />
         </button>
       </div>
 

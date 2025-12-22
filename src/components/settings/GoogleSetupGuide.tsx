@@ -61,7 +61,7 @@ export function GoogleSetupGuide({ defaultExpanded = false }: SetupGuideProps) {
               >
                 Google Cloud Console
               </a>{" "}
-              and create a new project (e.g., "Inkling").
+              and create a new project (e.g., &ldquo;Inkling&rdquo;).
             </p>
           </div>
 
@@ -75,7 +75,7 @@ export function GoogleSetupGuide({ defaultExpanded = false }: SetupGuideProps) {
             </h5>
             <ul className="space-y-1 text-xs" style={{ color: "var(--color-text-secondary)" }}>
               <li>• Navigate to <strong>APIs & Services</strong> → <strong>Library</strong></li>
-              <li>• Search for "Google Calendar API" and click <strong>Enable</strong></li>
+              <li>• Search for &ldquo;Google Calendar API&rdquo; and click <strong>Enable</strong></li>
             </ul>
           </div>
 
@@ -92,7 +92,7 @@ export function GoogleSetupGuide({ defaultExpanded = false }: SetupGuideProps) {
               <li>• Choose <strong>External</strong> (or <strong>Internal</strong> for Google Workspace)</li>
               <li>• Fill in required fields:
                 <ul className="ml-4 mt-1 space-y-0.5">
-                  <li>- App name: "Inkling"</li>
+                  <li>- App name: &ldquo;Inkling&rdquo;</li>
                   <li>- User support email: Your email</li>
                   <li>- Developer contact: Your email</li>
                 </ul>
@@ -114,7 +114,7 @@ export function GoogleSetupGuide({ defaultExpanded = false }: SetupGuideProps) {
               <li>• Go to <strong>APIs & Services</strong> → <strong>Credentials</strong></li>
               <li>• Click <strong>Create Credentials</strong> → <strong>OAuth client ID</strong></li>
               <li>• Application type: <strong>Desktop application</strong></li>
-              <li>• Name: "Inkling Desktop"</li>
+              <li>• Name: &ldquo;Inkling Desktop&rdquo;</li>
               <li>• Click <strong>Create</strong></li>
             </ul>
           </div>

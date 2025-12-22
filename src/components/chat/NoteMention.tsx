@@ -105,7 +105,6 @@ export function parseMentions(text: string, noteTitles: string[]): TextSegment[]
   const sortedTitles = [...noteTitles].sort((a, b) => b.length - a.length);
   
   let remaining = text;
-  let currentIndex = 0;
   
   while (remaining.length > 0) {
     // Find the next @ symbol
@@ -136,7 +135,6 @@ export function parseMentions(text: string, noteTitles: string[]): TextSegment[]
         if (charAfterTitle === undefined || charAfterTitle === " " || charAfterTitle === "\n" || /[.,!?;:]/.test(charAfterTitle)) {
           segments.push({ type: "mention", content: title });
           remaining = afterAt.slice(title.length);
-          currentIndex += atIndex + 1 + title.length;
           matched = true;
           break;
         }
@@ -147,7 +145,6 @@ export function parseMentions(text: string, noteTitles: string[]): TextSegment[]
       // No matching note title, treat @ as regular text
       segments.push({ type: "text", content: "@" });
       remaining = afterAt;
-      currentIndex += atIndex + 1;
     }
   }
   
