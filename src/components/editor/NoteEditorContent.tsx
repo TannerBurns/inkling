@@ -276,6 +276,7 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
         const items = event.clipboardData?.items;
         if (!items) return false;
 
+        // First, check for file pastes
         for (const item of items) {
           if (item.kind === "file") {
             const file = item.getAsFile();
@@ -289,6 +290,38 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
             }
           }
         }
+
+        // Check for markdown table in pasted text
+        const text = event.clipboardData?.getData("text/plain");
+        if (text) {
+          // Detect markdown table pattern: lines starting with | and containing |
+          // Filter out empty lines to handle tables with blank lines between rows
+          const lines = text.trim().split("\n").filter(line => line.trim().length > 0);
+          const isMarkdownTable = lines.length >= 2 && 
+            lines.every(line => line.trim().startsWith("|") && line.trim().endsWith("|")) &&
+            lines.some(line => /^\|[\s\-:]+\|/.test(line.trim())); // Has separator row
+          
+          if (isMarkdownTable) {
+            event.preventDefault();
+            const editor = editorRef.current;
+            if (editor) {
+              // Remove empty lines for proper markdown table parsing
+              const cleanedText = lines.join("\n");
+              // Convert markdown table to HTML using marked
+              const html = marked.parse(cleanedText);
+              if (typeof html === "string") {
+                editor.chain().focus().insertContent(html).run();
+              } else {
+                // Handle Promise (async mode)
+                html.then((parsedHtml) => {
+                  editor.chain().focus().insertContent(parsedHtml).run();
+                });
+              }
+            }
+            return true;
+          }
+        }
+
         return false;
       },
       handleDrop: (_view, event) => {
