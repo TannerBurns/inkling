@@ -85,6 +85,14 @@
 - AI-generated conversation titles
 - Real-time streaming responses with Markdown rendering
 
+### 🪄 Personal Assistant
+- **Daily briefing** - AI-generated summary of your day based on calendar events
+- **Daily inspiration** - Motivational quotes sourced via web search (when configured)
+- **Smart caching** - Content generates once per day, instant loading thereafter
+- **Quick actions** - One-click access to daily note and calendar
+- **Jump back in** - Quick links to recent notes, boards, and conversations
+- **Live updates** - Schedule and recent items update in real-time without regeneration
+
 ### 📤 AI-Powered Document Export
 - **Smart formatting** - AI agent intelligently structures your exports
 - **Multiple formats** - Export to PDF, Word (DOCX), Excel (XLSX), or PowerPoint (PPTX)
@@ -138,6 +146,18 @@ Inkling uses a unified AI gateway to connect to multiple providers seamlessly.
 | **LMStudio** | GUI application | User-friendly, built-in model browser |
 | **VLLM** | Docker/Python | Production-ready, high throughput |
 
+### Web Search Providers (Optional)
+
+Enable web search for AI agents and daily quotes in the Assistant panel.
+
+| Provider | Get API Key | Notes |
+|----------|-------------|-------|
+| **Serper** | [serper.dev](https://serper.dev) | Google Search results, generous free tier |
+| **Brave** | [brave.com/search/api](https://brave.com/search/api) | Privacy-focused search |
+| **Tavily** | [tavily.com](https://tavily.com) | AI-optimized search results |
+
+Configure in **Settings** → **Agents** → **Web Search**.
+
 ---
 
 ## 🏗️ Architecture
@@ -148,8 +168,8 @@ Inkling is built with performance and privacy in mind:
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                         Frontend (React + TypeScript)                            │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-│  │  TipTap  │ │ Chat UI  │ │Knowledge │ │ Calendar │ │  Kanban  │ │  Export  │ │
-│  │  Editor  │ │          │ │  Graph   │ │   View   │ │  Boards  │ │  Modal   │ │
+│  │  TipTap  │ │ Chat UI  │ │Knowledge │ │ Calendar │ │  Kanban  │ │Assistant │ │
+│  │  Editor  │ │          │ │  Graph   │ │   View   │ │  Boards  │ │  Panel   │ │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘ │
 └─────────────────────────────────────────────────────────────────────────────────┘
                                        │

@@ -178,17 +178,36 @@ pub fn get_events_in_range(
 ) -> Result<Vec<CalendarEventWithNote>, CalendarEventDbError> {
     let start_str = start.format("%Y-%m-%d %H:%M:%S").to_string();
     let end_str = end.format("%Y-%m-%d %H:%M:%S").to_string();
+    
+    // For all-day events, we need to use date-based comparison because they're stored
+    // at midnight UTC, but the query range uses the user's local timezone converted to UTC.
+    // This can cause all-day events to be missed if the user's timezone offset pushes
+    // midnight UTC outside the query range.
+    //
+    // We use the DATE portion for all-day events comparison:
+    // - Extract just the date from start_time for all-day events
+    // - Compare against the date range boundaries
+    let start_date = start.format("%Y-%m-%d").to_string();
+    let end_date = end.format("%Y-%m-%d").to_string();
 
     let mut stmt = conn.prepare(
         "SELECT e.id, e.title, e.description, e.start_time, e.end_time, e.all_day, e.recurrence_rule, e.source, e.external_id, e.linked_note_id, e.event_type, e.response_status, e.attendees, e.meeting_link, e.created_at, e.updated_at, n.title as note_title
          FROM calendar_events e
          LEFT JOIN notes n ON e.linked_note_id = n.id
-         WHERE e.start_time >= ?1 AND e.start_time < ?2
+         WHERE 
+           CASE 
+             WHEN e.all_day = 1 THEN 
+               -- For all-day events, compare using date only
+               date(e.start_time) >= date(?3) AND date(e.start_time) <= date(?4)
+             ELSE 
+               -- For timed events, use datetime comparison
+               e.start_time >= ?1 AND e.start_time < ?2
+           END
          ORDER BY e.start_time ASC",
     )?;
 
     let events = stmt
-        .query_map(params![start_str, end_str], row_to_event_with_note)?
+        .query_map(params![start_str, end_str, start_date, end_date], row_to_event_with_note)?
         .filter_map(Result::ok)
         .collect();
 

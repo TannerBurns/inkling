@@ -12,7 +12,7 @@ import { useNoteStore } from "./noteStore";
 import { useEditorGroupStore } from "./editorGroupStore";
 
 /** Mode for the right sidebar */
-export type RightSidebarMode = "notes" | "chat";
+export type RightSidebarMode = "assistant" | "notes" | "chat";
 
 interface ChatState {
   // Sidebar state
@@ -85,9 +85,9 @@ interface ChatState {
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
-  // Initial state - chat is open by default, panels visible
-  rightSidebarMode: "chat",
-  isChatOpen: true,
+  // Initial state - assistant is open by default, panels visible
+  rightSidebarMode: "assistant",
+  isChatOpen: false,
   isLeftPanelVisible: (() => {
     const saved = localStorage.getItem("inkling-left-panel-visible");
     return saved !== null ? saved === "true" : true; // Default to visible
@@ -114,7 +114,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   toggleChat: () => {
     const { rightSidebarMode } = get();
-    const newMode = rightSidebarMode === "chat" ? "notes" : "chat";
+    // Cycle through: assistant -> notes -> chat -> assistant
+    const newMode = rightSidebarMode === "chat" ? "assistant" : rightSidebarMode === "assistant" ? "notes" : "chat";
     set({ rightSidebarMode: newMode, isChatOpen: newMode === "chat" });
   },
 

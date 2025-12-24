@@ -2,6 +2,7 @@ import { RelatedNotes } from "./RelatedNotes";
 import { Backlinks } from "./Backlinks";
 import { RecentNotes } from "./RecentNotes";
 import { ChatPanel } from "../chat/ChatPanel";
+import { AssistantPanel } from "../assistant/AssistantPanel";
 import { useChatStore } from "../../stores/chatStore";
 import type { SearchResult } from "../../lib/search";
 import type { Backlink } from "../../lib/links";
@@ -29,6 +30,7 @@ export function RightSidebar({
   backlinksError,
 }: RightSidebarProps) {
   const { rightSidebarMode, setRightSidebarMode } = useChatStore();
+  const isAssistantMode = rightSidebarMode === "assistant";
   const isNotesMode = rightSidebarMode === "notes";
   const isChatMode = rightSidebarMode === "chat";
 
@@ -44,6 +46,21 @@ export function RightSidebar({
           style={{ backgroundColor: "var(--color-bg-tertiary)" }}
         >
           <button
+            onClick={() => setRightSidebarMode("assistant")}
+            className="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: isAssistantMode
+                ? "var(--color-bg-primary)"
+                : "transparent",
+              color: isAssistantMode
+                ? "var(--color-text-primary)"
+                : "var(--color-text-secondary)",
+              boxShadow: isAssistantMode ? "var(--shadow-sm)" : "none",
+            }}
+          >
+            Assistant
+          </button>
+          <button
             onClick={() => setRightSidebarMode("notes")}
             className="rounded-md px-3 py-1 text-xs font-medium transition-colors"
             style={{
@@ -55,7 +72,7 @@ export function RightSidebar({
                 : "var(--color-text-secondary)",
               boxShadow: isNotesMode ? "var(--shadow-sm)" : "none",
             }}
-        >
+          >
             Notes
           </button>
           <button
@@ -78,7 +95,9 @@ export function RightSidebar({
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {isNotesMode ? (
+        {isAssistantMode ? (
+          <AssistantPanel />
+        ) : isNotesMode ? (
           <div className="flex h-full flex-col">
             {/* Recent Notes */}
             <RecentNotes />

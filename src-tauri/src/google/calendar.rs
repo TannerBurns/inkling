@@ -167,10 +167,17 @@ pub async fn fetch_events_with_pool(
     let mut all_events = Vec::new();
     let mut page_token: Option<String> = None;
     
+    // Extend the query range by 1 day on each side to account for timezone differences
+    // with all-day events. Google's Calendar API interprets all-day event dates in the
+    // calendar's timezone, which may differ from UTC. By padding the range, we ensure
+    // we capture all-day events that might otherwise be excluded due to timezone boundary issues.
+    let padded_start = start - chrono::Duration::days(1);
+    let padded_end = end + chrono::Duration::days(1);
+    
     loop {
         // URL-encode the datetime values (they contain + and : which need encoding)
-        let time_min = urlencoding::encode(&start.to_rfc3339());
-        let time_max = urlencoding::encode(&end.to_rfc3339());
+        let time_min = urlencoding::encode(&padded_start.to_rfc3339());
+        let time_max = urlencoding::encode(&padded_end.to_rfc3339());
         
         let mut url = format!(
             "{}/calendars/primary/events?timeMin={}&timeMax={}&singleEvents=true&orderBy=startTime&maxResults=250",
@@ -384,12 +391,32 @@ pub async fn sync_events_to_db_with_pool(
     // Remove Google events that are in our database but no longer exist in Google for this date range
     // We check ALL our Google events and remove ones whose start_time falls within the sync range
     // but were not returned by Google (meaning they were deleted or moved)
+    //
+    // IMPORTANT: For all-day events, we need to use date-based comparison rather than datetime-based
+    // because all-day events are stored with midnight UTC times, but the sync range uses the user's
+    // local timezone converted to UTC. This can cause misalignment where an all-day event's start_time
+    // (midnight UTC) doesn't fall within the sync range (e.g., 08:00 UTC for a UTC-8 user).
     let all_our_google_events = calendar_events::get_all_google_events(&conn)
         .map_err(|e| GoogleCalendarError::DbError(e.to_string()))?;
     
+    // Calculate date-only boundaries for comparing all-day events
+    // We use the DATE portion only, treating the sync range as inclusive of any day it touches
+    let start_date = start.date_naive();
+    let end_date = end.date_naive();
+    
     for event in all_our_google_events {
-        // Only consider events whose start_time is within the sync range
-        if event.start_time >= start && event.start_time < end {
+        // Determine if this event falls within the sync range
+        let is_in_range = if event.all_day {
+            // For all-day events, compare using dates only to avoid timezone issues
+            // An all-day event is in range if its date falls within or overlaps the sync date range
+            let event_date = event.start_time.date_naive();
+            event_date >= start_date && event_date <= end_date
+        } else {
+            // For timed events, use the original datetime comparison
+            event.start_time >= start && event.start_time < end
+        };
+        
+        if is_in_range {
             if let Some(ref external_id) = event.external_id {
                 // If this event wasn't returned by Google, it was deleted
                 if !google_event_ids.contains(external_id) {

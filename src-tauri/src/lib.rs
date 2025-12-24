@@ -285,6 +285,9 @@ pub fn run() {
             commands::export_content_to_xlsx,
             commands::export_notes_to_pptx,
             commands::run_export_agent_cmd,
+            // Assistant commands
+            commands::generate_assistant_content,
+            commands::get_assistant_fallback,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

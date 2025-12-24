@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod ai;
+pub mod assistant;
 pub mod boards;
 pub mod calendar;
 pub mod chat;
@@ -16,6 +17,7 @@ pub mod vault;
 
 pub use agents::*;
 pub use ai::*;
+pub use assistant::*;
 pub use boards::*;
 pub use calendar::*;
 pub use chat::*;
