@@ -3,12 +3,9 @@
 //! Handles storage and retrieval of AI provider settings,
 //! including API keys, endpoints, and model configurations.
 
-#![allow(dead_code)]
-
 use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::env;
 
 /// Type of AI provider
@@ -53,30 +50,6 @@ pub struct AIProvider {
     /// Primarily useful for local providers where context size may vary
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_length: Option<u32>,
-}
-
-/// Default context lengths by provider type (in tokens)
-impl ProviderType {
-    /// Get the default context length for this provider type
-    pub fn default_context_length(&self) -> u32 {
-        match self {
-            ProviderType::OpenAI => 200_000,      // GPT-4o supports 128K, o1 supports 200K
-            ProviderType::Anthropic => 200_000,   // Claude 3.5 supports 200K
-            ProviderType::Google => 1_000_000,    // Gemini 1.5/2.0 supports 1M
-            ProviderType::Ollama => 32_000,       // Default for most local models
-            ProviderType::LMStudio => 32_000,     // Default for most local models
-            ProviderType::VLLM => 32_000,         // Default for most local models
-            ProviderType::Custom => 32_000,       // Conservative default
-        }
-    }
-}
-
-impl AIProvider {
-    /// Get the effective context length for this provider
-    /// Returns the configured value or the provider type's default
-    pub fn effective_context_length(&self) -> u32 {
-        self.context_length.unwrap_or_else(|| self.provider_type.default_context_length())
-    }
 }
 
 impl Default for AIProvider {
@@ -361,105 +334,6 @@ impl AIConfig {
 
         updated
     }
-
-    /// Get environment variables map for AI providers
-    /// This extracts all configured API keys and endpoints
-    pub fn get_env_vars(&self) -> HashMap<String, String> {
-        let mut env_vars = HashMap::new();
-
-        for provider in &self.providers {
-            if !provider.is_enabled {
-                continue;
-            }
-
-            match provider.provider_type {
-                ProviderType::OpenAI => {
-                    if let Some(ref key) = provider.api_key {
-                        if !key.is_empty() {
-                            env_vars.insert(ENV_OPENAI_API_KEY.to_string(), key.clone());
-                        }
-                    }
-                }
-                ProviderType::Anthropic => {
-                    if let Some(ref key) = provider.api_key {
-                        if !key.is_empty() {
-                            env_vars.insert(ENV_ANTHROPIC_API_KEY.to_string(), key.clone());
-                        }
-                    }
-                }
-                ProviderType::Google => {
-                    if let Some(ref key) = provider.api_key {
-                        if !key.is_empty() {
-                            env_vars.insert(ENV_GOOGLE_API_KEY.to_string(), key.clone());
-                        }
-                    }
-                }
-                ProviderType::Ollama => {
-                    if let Some(ref url) = provider.base_url {
-                        if !url.is_empty() {
-                            env_vars.insert(ENV_OLLAMA_URL.to_string(), url.clone());
-                        }
-                    }
-                }
-                ProviderType::LMStudio => {
-                    // LM Studio is configured via base_url in the provider config
-                }
-                _ => {}
-            }
-        }
-
-        env_vars
-    }
-
-    /// Get custom provider configurations
-    /// These are providers that need special configuration (like LM Studio)
-    pub fn get_custom_providers(&self) -> Vec<CustomProviderInfo> {
-        let mut custom_providers = Vec::new();
-
-        for provider in &self.providers {
-            if !provider.is_enabled {
-                continue;
-            }
-
-            match provider.provider_type {
-                ProviderType::LMStudio => {
-                    if let Some(ref url) = provider.base_url {
-                        if !url.is_empty() {
-                            // Ensure base URL doesn't end with /v1 since we use request_path_overrides
-                            let base_url = url.trim_end_matches('/').trim_end_matches("/v1").to_string();
-                            
-                            log::info!("[AIConfig] LMStudio provider raw models: {:?}", provider.models);
-                            log::info!("[AIConfig] Embedding provider: {}, model: {}", self.embedding.provider, self.embedding.model);
-                            
-                            // For LM Studio, use wildcard to allow all models
-                            // This is simpler than trying to maintain an exact list of allowed models
-                            // since LM Studio models can have various naming conventions
-                            let models = vec!["*".to_string()];
-                            
-                            log::info!("[AIConfig] LMStudio using wildcard (*) for all models");
-                            
-                            custom_providers.push(CustomProviderInfo {
-                                name: "lmstudio".to_string(),
-                                base_url,
-                                models,
-                            });
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        custom_providers
-    }
-}
-
-/// Information about a custom provider that needs config file configuration
-#[derive(Debug, Clone)]
-pub struct CustomProviderInfo {
-    pub name: String,
-    pub base_url: String,
-    pub models: Vec<String>,
 }
 
 /// Initialize AI config - load from DB and populate from environment

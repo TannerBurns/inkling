@@ -10,8 +10,6 @@
 //! - Native tool calling
 //! - Reasoning/thinking token streaming
 
-#![allow(dead_code)]
-
 mod types;
 mod openai;
 mod anthropic;
@@ -30,12 +28,9 @@ use super::config::{AIProvider, ProviderType};
 /// Trait for LLM client implementations
 ///
 /// All provider clients implement this trait to provide a unified interface
-/// for chat completions and embeddings.
+/// for chat completions.
 #[async_trait]
 pub trait LlmClient: Send + Sync {
-    /// Get the provider name
-    fn provider_name(&self) -> &'static str;
-
     /// Non-streaming chat completion
     async fn chat(&self, request: ChatRequest) -> Result<ChatResponse, LlmError>;
 
@@ -47,12 +42,6 @@ pub trait LlmClient: Send + Sync {
         &self,
         request: ChatRequest,
     ) -> Result<mpsc::Receiver<StreamEvent>, LlmError>;
-
-    /// Generate embeddings
-    async fn embed(&self, request: EmbedRequest) -> Result<EmbedResponse, LlmError>;
-
-    /// Check if the provider is healthy/reachable
-    async fn health_check(&self) -> Result<bool, LlmError>;
 }
 
 /// Create an LLM client for the given provider configuration
@@ -121,26 +110,6 @@ pub fn create_client(provider: &AIProvider) -> Result<Box<dyn LlmClient>, LlmErr
     }
 }
 
-/// Get the default client for a provider type with the given config
-pub fn create_client_for_provider(
-    provider_type: ProviderType,
-    api_key: Option<String>,
-    base_url: Option<&str>,
-) -> Result<Box<dyn LlmClient>, LlmError> {
-    let provider = AIProvider {
-        id: format!("{:?}", provider_type).to_lowercase(),
-        name: format!("{:?}", provider_type),
-        provider_type,
-        api_key,
-        base_url: base_url.map(String::from),
-        is_enabled: true,
-        models: Vec::new(),
-        selected_model: None,
-        context_length: None,
-    };
-    create_client(&provider)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,7 +130,6 @@ mod tests {
 
         let client = create_client(&provider);
         assert!(client.is_ok());
-        assert_eq!(client.unwrap().provider_name(), "OpenAI");
     }
 
     #[test]
@@ -180,8 +148,6 @@ mod tests {
 
         let client = create_client(&provider);
         assert!(client.is_ok());
-        // Ollama uses OpenAI-compatible client
-        assert_eq!(client.unwrap().provider_name(), "OpenAI");
     }
 
     #[test]

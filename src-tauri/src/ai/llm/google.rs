@@ -5,8 +5,6 @@
 //! - Native function calling
 //! - Streaming responses
 
-#![allow(dead_code)]
-
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -16,9 +14,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use super::{
-    ChatMessage, ChatRequest, ChatResponse, EmbedInput, EmbedRequest, EmbedResponse, EmbedUsage,
-    FunctionCall, LlmClient, LlmError, MessageRole, StreamEvent, TokenUsage, ToolCall,
-    ToolDefinition,
+    ChatMessage, ChatRequest, ChatResponse, FunctionCall, LlmClient, LlmError, MessageRole,
+    StreamEvent, TokenUsage, ToolCall, ToolDefinition,
 };
 
 const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
@@ -128,10 +125,6 @@ impl GoogleClient {
 
 #[async_trait]
 impl LlmClient for GoogleClient {
-    fn provider_name(&self) -> &'static str {
-        "Google"
-    }
-
     async fn chat(&self, request: ChatRequest) -> Result<ChatResponse, LlmError> {
         let url = format!(
             "{}/models/{}:generateContent?key={}",
@@ -438,77 +431,6 @@ impl LlmClient for GoogleClient {
 
         Ok(rx)
     }
-
-    async fn embed(&self, request: EmbedRequest) -> Result<EmbedResponse, LlmError> {
-        let url = format!(
-            "{}/models/{}:embedContent?key={}",
-            GEMINI_API_URL, request.model, self.api_key
-        );
-
-        let texts = match &request.input {
-            EmbedInput::Single(text) => vec![text.clone()],
-            EmbedInput::Batch(texts) => texts.clone(),
-        };
-
-        // Google's embedContent only supports single text, need to batch
-        let mut all_embeddings = Vec::new();
-        let mut total_tokens = 0u32;
-
-        for text in &texts {
-            let body = serde_json::json!({
-                "content": {
-                    "parts": [{"text": text}]
-                }
-            });
-
-            let response = self
-                .client
-                .post(&url)
-                .header("Content-Type", "application/json")
-                .json(&body)
-                .send()
-                .await?;
-
-            if !response.status().is_success() {
-                let status = response.status().as_u16();
-                let error_text = response.text().await.unwrap_or_default();
-                return Err(LlmError::ApiError {
-                    status,
-                    message: error_text,
-                });
-            }
-
-            let response_body: GeminiEmbedResponse = response.json().await?;
-            all_embeddings.push(response_body.embedding.values);
-            // Approximate token count
-            total_tokens += (text.len() / 4) as u32;
-        }
-
-        Ok(EmbedResponse {
-            embeddings: all_embeddings,
-            model: request.model,
-            usage: Some(EmbedUsage {
-                prompt_tokens: total_tokens,
-                total_tokens,
-            }),
-        })
-    }
-
-    async fn health_check(&self) -> Result<bool, LlmError> {
-        let url = format!("{}/models?key={}", GEMINI_API_URL, self.api_key);
-
-        let response = self
-            .client
-            .get(&url)
-            .timeout(Duration::from_secs(10))
-            .send()
-            .await;
-
-        match response {
-            Ok(resp) => Ok(resp.status().is_success()),
-            Err(_) => Ok(false),
-        }
-    }
 }
 
 // ============================================================================
@@ -594,14 +516,4 @@ struct GeminiUsage {
     candidates_token_count: u32,
     #[serde(rename = "totalTokenCount", default)]
     total_token_count: u32,
-}
-
-#[derive(Debug, Deserialize)]
-struct GeminiEmbedResponse {
-    embedding: GeminiEmbedding,
-}
-
-#[derive(Debug, Deserialize)]
-struct GeminiEmbedding {
-    values: Vec<f32>,
 }

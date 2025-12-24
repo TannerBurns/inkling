@@ -120,15 +120,16 @@ async fn search_semantic(
         config.embedding.provider
     );
     
-    // Get the provider's base URL for direct calls
-    let provider_url = config.providers.iter()
-        .find(|p| p.id == config.embedding.provider)
-        .and_then(|p| p.base_url.clone());
+    // Get the provider's base URL and API key for direct calls
+    let embedding_provider = config.providers.iter()
+        .find(|p| p.id == config.embedding.provider);
+    let provider_url = embedding_provider.and_then(|p| p.base_url.clone());
+    let api_key = embedding_provider.and_then(|p| p.api_key.clone());
 
-    log::info!("[search_semantic] Provider URL: {:?}", provider_url);
+    log::info!("[search_semantic] Provider URL: {:?}, has API key: {}", provider_url, api_key.is_some());
 
     // Generate embedding for query using direct provider call
-    let query_embedding = generate_embedding_direct(query, &model, provider_url.as_deref())
+    let query_embedding = generate_embedding_direct(query, &model, provider_url.as_deref(), api_key.as_deref())
         .await
         .map_err(|e| {
             log::error!("[search_semantic] Failed to generate query embedding: {}", e);
@@ -335,19 +336,22 @@ pub async fn detect_embedding_dimension(
     pool: State<'_, AppPool>,
     model: String,
 ) -> Result<DetectDimensionResult, String> {
-    // Get provider URL from config
-    let provider_url = {
+    // Get provider URL and API key from config
+    let (provider_url, api_key) = {
         let pool_guard = pool.0.read().unwrap();
         let pool = pool_guard.as_ref().ok_or("Database not initialized")?;
         let conn = pool.get().map_err(|e| format!("Database error: {}", e))?;
         let config = load_ai_config(&conn)?;
-        config.providers.iter()
-            .find(|p| p.id == config.embedding.provider)
-            .and_then(|p| p.base_url.clone())
+        let embedding_provider = config.providers.iter()
+            .find(|p| p.id == config.embedding.provider);
+        (
+            embedding_provider.and_then(|p| p.base_url.clone()),
+            embedding_provider.and_then(|p| p.api_key.clone())
+        )
     };
     
     // Generate a test embedding with a simple text
-    let result = generate_embedding_direct("test", &model, provider_url.as_deref())
+    let result = generate_embedding_direct("test", &model, provider_url.as_deref(), api_key.as_deref())
         .await
         .map_err(|e| format!("Failed to detect dimension: {}", e))?;
     
@@ -378,7 +382,7 @@ pub async fn reindex_embeddings(
     };
     
     // Do initial sync db work
-    let (notes, embedding_model, provider_url) = {
+    let (notes, embedding_model, provider_url, api_key) = {
         let conn = pool_clone.get().map_err(|e| format!("Database error: {}", e))?;
         
         // Delete all existing embeddings
@@ -398,16 +402,17 @@ pub async fn reindex_embeddings(
             config.embedding.full_model_id()
         );
         
-        // Get the provider's base URL for direct calls
-        let provider_url = config.providers.iter()
-            .find(|p| p.id == config.embedding.provider)
-            .and_then(|p| p.base_url.clone());
+        // Get the provider's base URL and API key for direct calls
+        let embedding_provider = config.providers.iter()
+            .find(|p| p.id == config.embedding.provider);
+        let provider_url = embedding_provider.and_then(|p| p.base_url.clone());
+        let api_key = embedding_provider.and_then(|p| p.api_key.clone());
         
-        (notes, config.embedding.full_model_id(), provider_url)
+        (notes, config.embedding.full_model_id(), provider_url, api_key)
     };
     
     let total_notes = notes.len() as u32;
-    log::info!("[Reindex] Using model: {}, provider_url: {:?}", embedding_model, provider_url);
+    log::info!("[Reindex] Using model: {}, provider_url: {:?}, has API key: {}", embedding_model, provider_url, api_key.is_some());
     
     let mut embedded_count = 0u32;
     let mut errors: Vec<String> = Vec::new();
@@ -425,7 +430,7 @@ pub async fn reindex_embeddings(
         }
         
         // Generate embedding using direct provider call
-        match generate_embedding_direct(&text_to_embed, &embedding_model, provider_url.as_deref()).await {
+        match generate_embedding_direct(&text_to_embed, &embedding_model, provider_url.as_deref(), api_key.as_deref()).await {
             Ok(result) => {
                 // Store embedding (sync db work)
                 let conn = pool_clone.get().map_err(|e| format!("Database error: {}", e))?;
@@ -550,21 +555,23 @@ async fn embed_note_internal(
     
     let full_model_id = config.embedding.full_model_id();
     
-    // Get the provider's base URL for direct calls
-    let provider_url = config.providers.iter()
-        .find(|p| p.id == config.embedding.provider)
-        .and_then(|p| p.base_url.clone());
+    // Get the provider's base URL and API key for direct calls
+    let embedding_provider = config.providers.iter()
+        .find(|p| p.id == config.embedding.provider);
+    let provider_url = embedding_provider.and_then(|p| p.base_url.clone());
+    let api_key = embedding_provider.and_then(|p| p.api_key.clone());
     
-    log::info!("[Embedding] Note: {}, Provider: {}, Model: {}, Full ID: {}, Provider URL: {:?}", 
+    log::info!("[Embedding] Note: {}, Provider: {}, Model: {}, Full ID: {}, Provider URL: {:?}, has API key: {}", 
         note_id, 
         config.embedding.provider, 
         config.embedding.model, 
         full_model_id,
-        provider_url
+        provider_url,
+        api_key.is_some()
     );
     
     // Generate embedding using direct provider call
-    let result = generate_embedding_direct(&text_to_embed, &full_model_id, provider_url.as_deref())
+    let result = generate_embedding_direct(&text_to_embed, &full_model_id, provider_url.as_deref(), api_key.as_deref())
         .await
         .map_err(|e| {
             log::error!("[Embedding] Failed for note {}: {}", note_id, e);

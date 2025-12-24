@@ -3,8 +3,6 @@
 //! An AI agent focused on summarizing content from selected text or attachments.
 //! Produces concise, structured summaries and streams them to the note in real-time.
 
-#![allow(dead_code)]
-
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -71,7 +69,6 @@ pub struct SummarizationAgent {
     execution_id: String,
     pool: DbPool,
     provider: AIProvider,
-    vault_path: String,
     chunks_appended: Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -82,14 +79,12 @@ impl SummarizationAgent {
         execution_id: String,
         pool: DbPool,
         provider: AIProvider,
-        vault_path: String,
     ) -> Self {
         Self {
             app_handle,
             execution_id,
             pool,
             provider,
-            vault_path,
             chunks_appended: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
     }
@@ -149,7 +144,7 @@ pub async fn run_summarization_agent(
     model: &str,
     content: &str,
     content_type: &str,
-    vault_path: &str,
+    _vault_path: &str,
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<SummarizationResult, AgentError> {
     log::info!(
@@ -164,7 +159,6 @@ pub async fn run_summarization_agent(
         execution_id.to_string(),
         pool.clone(),
         provider.clone(),
-        vault_path.to_string(),
     );
 
     let tools = get_summarization_tools();

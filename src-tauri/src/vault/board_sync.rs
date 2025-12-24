@@ -2,8 +2,6 @@
 //!
 //! Syncs board data to/from .board.json files in folder directories.
 
-#![allow(dead_code)]
-
 use crate::db::boards;
 use crate::db::connection::DbPool;
 use crate::db::folders;
@@ -16,8 +14,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum BoardSyncError {
-    #[error("Vault not configured")]
-    VaultNotConfigured,
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("JSON error: {0}")]
@@ -288,24 +284,6 @@ fn sync_cards_for_lane(
     }
     
     Ok(())
-}
-
-/// Delete a board's file from the filesystem
-pub fn delete_board_file(pool: &DbPool, board_id: &str) -> Result<bool, BoardSyncError> {
-    let conn = pool.get()?;
-    
-    // Get the board to find its folder
-    if let Some(board) = boards::get_board(&conn, board_id)? {
-        let board_file_path = get_board_file_path(&conn, &board.folder_id)?;
-        
-        if board_file_path.exists() {
-            fs::remove_file(&board_file_path)?;
-            log::info!("Deleted board file: {:?}", board_file_path);
-            return Ok(true);
-        }
-    }
-    
-    Ok(false)
 }
 
 /// Sync all boards to filesystem

@@ -2,8 +2,6 @@
 //!
 //! Handles syncing notes between Markdown files and the SQLite database.
 
-#![allow(dead_code)]
-
 use crate::db::connection::DbPool;
 use crate::db::{folders, notes};
 use crate::models::{CreateNoteInput, Note, UpdateNoteInput};
@@ -14,8 +12,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum SyncError {
-    #[error("Vault not configured")]
-    VaultNotConfigured,
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("Markdown error: {0}")]
@@ -199,43 +195,6 @@ fn collect_markdown_files(dir: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
     Ok(files)
 }
 
-/// Handle a file creation event
-pub fn handle_file_created(pool: &DbPool, file_path: &Path) -> Result<Option<Note>, SyncError> {
-    // Only process markdown files
-    if file_path.extension().map_or(true, |ext| ext != "md") {
-        return Ok(None);
-    }
-    
-    let note = sync_file_to_note(pool, file_path)?;
-    Ok(Some(note))
-}
-
-/// Handle a file modification event
-pub fn handle_file_modified(pool: &DbPool, file_path: &Path) -> Result<Option<Note>, SyncError> {
-    // Only process markdown files
-    if file_path.extension().map_or(true, |ext| ext != "md") {
-        return Ok(None);
-    }
-    
-    let note = sync_file_to_note(pool, file_path)?;
-    Ok(Some(note))
-}
-
-/// Handle a file deletion event
-pub fn handle_file_deleted(_pool: &DbPool, file_path: &Path) -> Result<bool, SyncError> {
-    // We need to find the note by its file path
-    // This requires reading the frontmatter before deletion, which we can't do
-    // Instead, we'll need to maintain a mapping or use the title from the filename
-    
-    // For now, just log the deletion
-    log::info!("File deleted: {:?}", file_path);
-    
-    // TODO: Implement proper deletion handling
-    // This would require maintaining a path-to-id mapping
-    
-    Ok(false)
-}
-
 /// Delete a note's file from the filesystem
 pub fn delete_note_file(pool: &DbPool, note_id: &str) -> Result<bool, SyncError> {
     let notes_dir = config::get_notes_dir()?;
@@ -263,43 +222,4 @@ pub fn delete_note_file(pool: &DbPool, note_id: &str) -> Result<bool, SyncError>
     }
     
     Ok(false)
-}
-
-/// Rename a note's file when the title changes
-pub fn rename_note_file(
-    pool: &DbPool,
-    note_id: &str,
-    old_title: &str,
-    new_title: &str,
-) -> Result<PathBuf, SyncError> {
-    let notes_dir = config::get_notes_dir()?;
-    let conn = pool.get()?;
-    
-    // Get folder info
-    let note = notes::get_note(&conn, note_id)?
-        .ok_or_else(|| SyncError::DbError(format!("Note not found: {}", note_id)))?;
-    
-    // Get full folder path
-    let folder_path = if let Some(ref folder_id) = note.folder_id {
-        Some(build_folder_path(&conn, folder_id)?)
-    } else {
-        None
-    };
-    
-    let old_path = markdown::get_note_path(&notes_dir, old_title, folder_path.as_deref());
-    let new_path = markdown::get_note_path(&notes_dir, new_title, folder_path.as_deref());
-    
-    if old_path.exists() && old_path != new_path {
-        // Ensure parent directory exists
-        if let Some(parent) = new_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        
-        fs::rename(&old_path, &new_path)?;
-    }
-    
-    // Update the file content with new title
-    sync_note_to_file(pool, note_id)?;
-    
-    Ok(new_path)
 }

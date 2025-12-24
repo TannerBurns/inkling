@@ -89,8 +89,6 @@ pub enum AgentError {
     ApiError(String),
     #[error("Agent execution was cancelled")]
     Cancelled,
-    #[error("LLM error: {0}")]
-    LlmError(String),
     #[error("Provider not configured: {0}")]
     NotConfigured(String),
 }
@@ -104,9 +102,7 @@ impl From<LlmError> for AgentError {
             }
             LlmError::MissingApiKey => AgentError::NotConfigured("Missing API key".to_string()),
             LlmError::InvalidResponse(msg) => AgentError::ParseError(msg),
-            LlmError::StreamError(msg) => AgentError::LlmError(msg),
             LlmError::NotConfigured(msg) => AgentError::NotConfigured(msg),
-            LlmError::Unsupported(msg) => AgentError::LlmError(msg),
         }
     }
 }
@@ -393,7 +389,6 @@ pub async fn run_agent<E: ToolExecutor>(
             tool_choice: if llm_tools.is_empty() { None } else { Some("auto".to_string()) },
             max_tokens: None,
             temperature: None,
-            stream: false,
             enable_reasoning: false,
             reasoning_effort: None,
             thinking_budget: None,
@@ -558,7 +553,6 @@ pub async fn run_agent_with_events<E: ToolExecutor>(
             tool_choice: if llm_tools.is_empty() { None } else { Some("auto".to_string()) },
             max_tokens: None,
             temperature: None,
-            stream: false,
             enable_reasoning: false,
             reasoning_effort: None,
             thinking_budget: None,

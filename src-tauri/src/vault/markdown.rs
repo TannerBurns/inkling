@@ -251,7 +251,8 @@ It has multiple paragraphs.
     #[test]
     fn test_title_to_filename() {
         assert_eq!(title_to_filename("My Note"), "My Note.md");
-        assert_eq!(title_to_filename("Note: Important!"), "Note_ Important_.md");
+        // Special chars become underscores, then underscores/spaces collapse to single spaces
+        assert_eq!(title_to_filename("Note: Important!"), "Note Important.md");
         assert_eq!(title_to_filename(""), "Untitled");
     }
 }

@@ -3,8 +3,6 @@
 //! Stores note embeddings as BLOBs and uses sqlite-vec functions
 //! for efficient similarity search.
 
-#![allow(dead_code)]
-
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -94,42 +92,6 @@ pub fn get_embedding(
         Some(bytes) => Ok(Some(bytes_to_embedding(&bytes)?)),
         None => Ok(None),
     }
-}
-
-/// Get embedding metadata for a note
-pub fn get_embedding_info(
-    conn: &Connection,
-    note_id: &str,
-) -> Result<Option<StoredEmbedding>, EmbeddingDbError> {
-    let result = conn
-        .query_row(
-            "SELECT note_id, dimension, model, model_version, created_at, updated_at
-             FROM note_embeddings WHERE note_id = ?1",
-            [note_id],
-            |row| {
-                Ok(StoredEmbedding {
-                    note_id: row.get(0)?,
-                    dimension: row.get::<_, i32>(1)? as u32,
-                    model: row.get(2)?,
-                    model_version: row.get(3)?,
-                    created_at: row.get(4)?,
-                    updated_at: row.get(5)?,
-                })
-            },
-        )
-        .optional()?;
-
-    Ok(result)
-}
-
-/// Delete the embedding for a note
-pub fn delete_embedding(conn: &Connection, note_id: &str) -> Result<bool, EmbeddingDbError> {
-    let rows_affected = conn.execute(
-        "DELETE FROM note_embeddings WHERE note_id = ?1",
-        [note_id],
-    )?;
-
-    Ok(rows_affected > 0)
 }
 
 /// Find notes similar to the given embedding using cosine similarity
@@ -260,45 +222,6 @@ pub fn search_similar_to_note(
     Ok(results)
 }
 
-/// Get all notes that need embedding (no embedding or different model)
-pub fn get_notes_needing_embedding(
-    conn: &Connection,
-    current_model: &str,
-) -> Result<Vec<String>, EmbeddingDbError> {
-    let mut stmt = conn.prepare(
-        "SELECT n.id FROM notes n
-         LEFT JOIN note_embeddings ne ON ne.note_id = n.id
-         WHERE n.is_deleted = FALSE
-           AND (ne.note_id IS NULL OR ne.model != ?1)
-         ORDER BY n.updated_at DESC",
-    )?;
-
-    let note_ids: Vec<String> = stmt
-        .query_map([current_model], |row| row.get(0))?
-        .filter_map(Result::ok)
-        .collect();
-
-    Ok(note_ids)
-}
-
-/// Get notes with stale embeddings (note updated after embedding)
-pub fn get_stale_embeddings(conn: &Connection) -> Result<Vec<String>, EmbeddingDbError> {
-    let mut stmt = conn.prepare(
-        "SELECT n.id FROM notes n
-         JOIN note_embeddings ne ON ne.note_id = n.id
-         WHERE n.is_deleted = FALSE
-           AND n.updated_at > ne.updated_at
-         ORDER BY n.updated_at DESC",
-    )?;
-
-    let note_ids: Vec<String> = stmt
-        .query_map([], |row| row.get(0))?
-        .filter_map(Result::ok)
-        .collect();
-
-    Ok(note_ids)
-}
-
 /// Get embedding statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -403,27 +326,6 @@ mod tests {
         for (a, b) in embedding.iter().zip(retrieved.iter()) {
             assert!((a - b).abs() < 0.0001);
         }
-    }
-
-    #[test]
-    fn test_delete_embedding() {
-        let pool = init_test_pool().unwrap();
-        let conn = pool.get().unwrap();
-
-        conn.execute(
-            "INSERT INTO notes (id, title, content) VALUES ('note1', 'Test', 'Content')",
-            [],
-        )
-        .unwrap();
-
-        let embedding = vec![0.1, 0.2, 0.3];
-        store_embedding(&conn, "note1", &embedding, "test-model", None).unwrap();
-
-        assert!(get_embedding(&conn, "note1").unwrap().is_some());
-
-        delete_embedding(&conn, "note1").unwrap();
-
-        assert!(get_embedding(&conn, "note1").unwrap().is_none());
     }
 
     #[test]

@@ -70,18 +70,19 @@ pub async fn execute_search_notes(
         return Err("Query cannot be empty".to_string());
     }
 
-    // Get embedding model and provider URL from config
-    let (embedding_model, provider_url) = {
+    // Get embedding model, provider URL, and API key from config
+    let (embedding_model, provider_url, api_key) = {
         let conn = pool.get().map_err(|e| e.to_string())?;
         let config = load_ai_config(&conn).map_err(|e| e)?;
-        let provider_url = config.providers.iter()
-            .find(|p| p.id == config.embedding.provider)
-            .and_then(|p| p.base_url.clone());
-        (config.embedding.full_model_id(), provider_url)
+        let embedding_provider = config.providers.iter()
+            .find(|p| p.id == config.embedding.provider);
+        let provider_url = embedding_provider.and_then(|p| p.base_url.clone());
+        let api_key = embedding_provider.and_then(|p| p.api_key.clone());
+        (config.embedding.full_model_id(), provider_url, api_key)
     };
 
     // Generate embedding for the query using the provider URL directly
-    let query_embedding = generate_embedding_direct(query, &embedding_model, provider_url.as_deref())
+    let query_embedding = generate_embedding_direct(query, &embedding_model, provider_url.as_deref(), api_key.as_deref())
         .await
         .map_err(|e| format!("Failed to generate embedding: {}", e))?;
 

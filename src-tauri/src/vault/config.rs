@@ -3,8 +3,6 @@
 //! Handles storing and retrieving the vault path, as well as creating
 //! new vault structures.
 
-#![allow(dead_code)]
-
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -19,10 +17,6 @@ static VAULT_PATH: RwLock<Option<PathBuf>> = RwLock::new(None);
 pub enum VaultError {
     #[error("No vault configured")]
     NotConfigured,
-    #[error("Invalid vault path: {0}")]
-    InvalidPath(String),
-    #[error("Failed to create vault: {0}")]
-    CreateError(String),
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("JSON error: {0}")]
@@ -244,17 +238,4 @@ pub fn get_exports_dir() -> Result<PathBuf, VaultError> {
     }
     
     Ok(exports_dir)
-}
-
-pub fn get_inkling_dir() -> Result<PathBuf, VaultError> {
-    let vault = get_current_vault_path().ok_or(VaultError::NotConfigured)?;
-    Ok(vault.join(".inkling"))
-}
-
-pub fn get_db_path_in_vault() -> Result<PathBuf, VaultError> {
-    Ok(get_inkling_dir()?.join("inkling.db"))
-}
-
-pub fn get_search_index_path_in_vault() -> Result<PathBuf, VaultError> {
-    Ok(get_inkling_dir()?.join("search_index"))
 }

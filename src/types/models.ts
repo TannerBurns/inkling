@@ -35,31 +35,22 @@ export interface ThinkingConfig {
 export const CURATED_MODELS = {
   /** OpenAI models with reasoning effort support info and context sizes */
   openai: [
-    // GPT-5 series (with reasoning) - 1M context
-    { id: "gpt-5.1", displayName: "GPT-5.1", provider: "openai" as const, supportsReasoning: true, contextSize: 1_000_000 },
-    { id: "gpt-5", displayName: "GPT-5", provider: "openai" as const, supportsReasoning: true, contextSize: 1_000_000 },
-    { id: "gpt-5-mini", displayName: "GPT-5 Mini", provider: "openai" as const, supportsReasoning: true, contextSize: 1_000_000 },
-    { id: "gpt-5-nano", displayName: "GPT-5 Nano", provider: "openai" as const, supportsReasoning: true, contextSize: 1_000_000 },
+    // GPT-5 series (with reasoning) - 400k context
+    { id: "gpt-5.2", displayName: "GPT-5.2", provider: "openai" as const, supportsReasoning: true, contextSize: 400_000 },
+    { id: "gpt-5.1", displayName: "GPT-5.1", provider: "openai" as const, supportsReasoning: true, contextSize: 400_000 },
+    { id: "gpt-5", displayName: "GPT-5", provider: "openai" as const, supportsReasoning: true, contextSize: 400_000 },
+    { id: "gpt-5-mini", displayName: "GPT-5 Mini", provider: "openai" as const, supportsReasoning: true, contextSize: 400_000 },
+    { id: "gpt-5-nano", displayName: "GPT-5 Nano", provider: "openai" as const, supportsReasoning: true, contextSize: 400_000 },
 
-    // O-series reasoning models - 200K context
-    { id: "o4-mini", displayName: "o4-mini", provider: "openai" as const, supportsReasoning: true, contextSize: 200_000 },
-    { id: "o3", displayName: "o3", provider: "openai" as const, supportsReasoning: true, contextSize: 200_000 },
-    { id: "o3-mini", displayName: "o3-mini", provider: "openai" as const, supportsReasoning: true, contextSize: 200_000 },
-    { id: "o1", displayName: "o1", provider: "openai" as const, supportsReasoning: true, contextSize: 200_000 },
-    { id: "o1-mini", displayName: "o1-mini", provider: "openai" as const, supportsReasoning: true, contextSize: 128_000 },
-    { id: "o1-preview", displayName: "o1-preview", provider: "openai" as const, supportsReasoning: true, contextSize: 128_000 },
-
-    // GPT-4.1 series (no reasoning) - 1M context
-    { id: "gpt-4.1", displayName: "GPT-4.1", provider: "openai" as const, supportsReasoning: false, contextSize: 1_000_000 },
-    { id: "gpt-4.1-mini", displayName: "GPT-4.1 Mini", provider: "openai" as const, supportsReasoning: false, contextSize: 1_000_000 },
-    { id: "gpt-4.1-nano", displayName: "GPT-4.1 Nano", provider: "openai" as const, supportsReasoning: false, contextSize: 1_000_000 },
+    // GPT-4.1 series (no reasoning) - 128k context
+    { id: "gpt-4.1", displayName: "GPT-4.1", provider: "openai" as const, supportsReasoning: false, contextSize: 128_000 },
+    { id: "gpt-4.1-mini", displayName: "GPT-4.1 Mini", provider: "openai" as const, supportsReasoning: false, contextSize: 128_000 },
+    { id: "gpt-4.1-nano", displayName: "GPT-4.1 Nano", provider: "openai" as const, supportsReasoning: false, contextSize: 128_000 },
 
     // GPT-4o series (no reasoning) - 128K context
     { id: "gpt-4o", displayName: "GPT-4o", provider: "openai" as const, supportsReasoning: false, contextSize: 128_000 },
     { id: "gpt-4o-mini", displayName: "GPT-4o Mini", provider: "openai" as const, supportsReasoning: false, contextSize: 128_000 },
 
-    // GPT-4 Turbo - 128K context
-    { id: "gpt-4-turbo", displayName: "GPT-4 Turbo", provider: "openai" as const, supportsReasoning: false, contextSize: 128_000 },
   ] satisfies ModelDefinition[],
 
   /** Anthropic models with extended thinking support info and context sizes */
@@ -68,7 +59,6 @@ export const CURATED_MODELS = {
     { id: "claude-sonnet-4-5", displayName: "Claude Sonnet 4.5", provider: "anthropic" as const, supportsReasoning: true, contextSize: 200_000 },
     { id: "claude-opus-4-5", displayName: "Claude Opus 4.5", provider: "anthropic" as const, supportsReasoning: true, contextSize: 200_000 },
     { id: "claude-haiku-4-5", displayName: "Claude Haiku 4.5", provider: "anthropic" as const, supportsReasoning: true, contextSize: 200_000 },
-    { id: "claude-opus-4.1", displayName: "Claude Opus 4.1", provider: "anthropic" as const, supportsReasoning: true, contextSize: 200_000 },
     { id: "claude-sonnet-4", displayName: "Claude Sonnet 4", provider: "anthropic" as const, supportsReasoning: true, contextSize: 200_000 },
 
     // Claude 3.7 series - 200K context
@@ -82,18 +72,12 @@ export const CURATED_MODELS = {
   /** Google AI Studio models (Gemini) with reasoning support and context sizes */
   google: [
     // Gemini 3 series - 1M context
+    { id: "gemini-3-flash-preview", displayName: "Gemini 3 Flash", provider: "google" as const, supportsReasoning: true, contextSize: 1_000_000 },
     { id: "gemini-3-pro-preview", displayName: "Gemini 3 Pro", provider: "google" as const, supportsReasoning: true, contextSize: 1_000_000 },
 
     // Gemini 2.5 series - 1M context
     { id: "gemini-2.5-pro", displayName: "Gemini 2.5 Pro", provider: "google" as const, supportsReasoning: true, contextSize: 1_000_000 },
     { id: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash", provider: "google" as const, supportsReasoning: true, contextSize: 1_000_000 },
-
-    // Gemini 2.0 series - 1M context
-    { id: "gemini-2.0-flash", displayName: "Gemini 2.0 Flash", provider: "google" as const, supportsReasoning: false, contextSize: 1_000_000 },
-
-    // Gemini 1.5 series - 1M context
-    { id: "gemini-1.5-pro", displayName: "Gemini 1.5 Pro", provider: "google" as const, supportsReasoning: false, contextSize: 1_000_000 },
-    { id: "gemini-1.5-flash", displayName: "Gemini 1.5 Flash", provider: "google" as const, supportsReasoning: false, contextSize: 1_000_000 },
   ] satisfies ModelDefinition[],
 } as const;
 

@@ -266,7 +266,6 @@ pub async fn send_chat_message(
         temperature: None,
         tools: None,
         tool_choice: None,
-        stream: true,
         enable_reasoning: false,
         reasoning_effort: None,
         thinking_budget: None,
@@ -527,7 +526,6 @@ pub async fn send_chat_message_sync(
         temperature: None,
         tools: None,
         tool_choice: None,
-        stream: false,
         enable_reasoning: false,
         reasoning_effort: None,
         thinking_budget: None,
@@ -732,7 +730,6 @@ pub async fn edit_message_and_regenerate(
         temperature: None,
         tools: None,
         tool_choice: None,
-        stream: true,
         enable_reasoning: false,
         reasoning_effort: None,
         thinking_budget: None,
@@ -912,35 +909,11 @@ fn get_chat_model_and_provider(config: &crate::ai::AIConfig) -> Result<(String, 
         .or_else(|| provider.models.first().cloned())
         .ok_or_else(|| format!("No model available for provider {}", provider.name))?;
 
-    // Format the model with provider prefix for routing
-    let formatted_model = match provider.provider_type {
-        crate::ai::ProviderType::Ollama => {
-            if model.starts_with("ollama/") { model } else { format!("ollama/{}", model) }
-        }
-        crate::ai::ProviderType::LMStudio => {
-            if model.starts_with("lmstudio/") { model } else { format!("lmstudio/{}", model) }
-        }
-        crate::ai::ProviderType::VLLM => {
-            if model.starts_with("vllm/") { model } else { format!("vllm/{}", model) }
-        }
-        crate::ai::ProviderType::OpenAI => {
-            let model_name = model.clone();
-            format!("openai/{}", model_name)
-        }
-        crate::ai::ProviderType::Anthropic => {
-            let model_name = model.clone();
-            format!("anthropic/{}", model_name)
-        }
-        crate::ai::ProviderType::Google => {
-            let model_name = model.clone();
-            format!("google/{}", model_name)
-        }
-        crate::ai::ProviderType::Custom => {
-            if model.starts_with("openai/") { model } else { format!("openai/{}", model) }
-        }
-    };
-
-    Ok((formatted_model, provider))
+    // For cloud providers (OpenAI, Anthropic, Google), use the model name directly
+    // as their APIs expect just the model name without a prefix.
+    // For local providers (Ollama, LM Studio, VLLM), we use an OpenAI-compatible client
+    // but don't need prefixes either since we route based on provider_type.
+    Ok((model, provider))
 }
 
 /// Strip known provider prefixes from model name
@@ -969,7 +942,6 @@ async fn generate_ai_title(
         temperature: Some(0.7),
         tools: None,
         tool_choice: None,
-        stream: false,
         enable_reasoning: false,
         reasoning_effort: None,
         thinking_budget: None,

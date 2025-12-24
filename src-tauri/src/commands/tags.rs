@@ -1,7 +1,5 @@
 //! Tauri commands for tag operations and the tagging agent
 
-#![allow(dead_code)]
-
 use tauri::State;
 
 use crate::ai::{load_ai_config, run_tagging_agent, TaggingResult};
@@ -194,6 +192,7 @@ pub async fn run_tagging_agent_cmd(
 }
 
 /// Get the chat model from AI config
+#[allow(dead_code)]
 fn get_chat_model(config: &crate::ai::AIConfig) -> Result<String, String> {
     // Find the default provider or first enabled provider
     let provider = if let Some(ref default_id) = config.default_provider {
@@ -218,63 +217,12 @@ fn get_chat_model(config: &crate::ai::AIConfig) -> Result<String, String> {
         .or_else(|| provider.models.first().cloned())
         .ok_or_else(|| format!("No model available for provider {}", provider.name))?;
 
-    log::info!("[TaggingAgent] Raw model: {}", model);
+    log::info!("[TaggingAgent] Model: {}", model);
 
-    // For local providers (Ollama, LM Studio), the model name might contain "/"
-    // as part of the actual model identifier (e.g., "openai/gpt-oss-120b" from LM Studio)
-    // We need to preserve this and just prepend our routing prefix
-    let final_model = match provider.provider_type {
-        crate::ai::ProviderType::Ollama => {
-            // Ollama models: use ollama/model-name format
-            if model.starts_with("ollama/") {
-                model
-            } else {
-                format!("ollama/{}", model)
-            }
-        }
-        crate::ai::ProviderType::LMStudio => {
-            if model.starts_with("lmstudio/") {
-                model
-            } else {
-                format!("lmstudio/{}", model)
-            }
-        }
-        crate::ai::ProviderType::VLLM => {
-            if model.starts_with("vllm/") {
-                model
-            } else {
-                format!("vllm/{}", model)
-            }
-        }
-        crate::ai::ProviderType::OpenAI => {
-            if model.starts_with("openai/") {
-                model
-            } else {
-                format!("openai/{}", model)
-            }
-        }
-        crate::ai::ProviderType::Anthropic => {
-            if model.starts_with("anthropic/") {
-                model
-            } else {
-                format!("anthropic/{}", model)
-            }
-        }
-        crate::ai::ProviderType::Google => {
-            if model.starts_with("google/") {
-                model
-            } else {
-                format!("google/{}", model)
-            }
-        }
-        crate::ai::ProviderType::Custom => {
-            // For custom providers, use the model name as-is
-            model
-        }
-    };
-
-    log::info!("[TaggingAgent] Final model: {}", final_model);
-    Ok(final_model)
+    // Use the model name directly - cloud provider APIs expect just the model name
+    // without any prefix. Local providers use OpenAI-compatible clients and also
+    // don't need prefixes since routing is handled by provider_type.
+    Ok(model)
 }
 
 /// Get the chat model and provider from AI config

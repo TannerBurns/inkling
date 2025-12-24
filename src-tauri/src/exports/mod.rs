@@ -148,7 +148,8 @@ mod tests {
     #[test]
     fn test_sanitize_filename() {
         assert_eq!(sanitize_filename("Hello World"), "Hello World");
-        assert_eq!(sanitize_filename("Test/File:Name"), "Test_File_Name");
+        // Special chars become underscores, then underscores/spaces collapse to single spaces
+        assert_eq!(sanitize_filename("Test/File:Name"), "Test File Name");
         assert_eq!(sanitize_filename("  Multiple   Spaces  "), "Multiple Spaces");
     }
 

@@ -779,38 +779,40 @@ function ProviderCard({
   const supportsEmbeddings = EMBEDDING_PROVIDERS.includes(provider.id);
   const isEmbeddingProvider = embeddingProvider === provider.id;
   
-  // Get embedding models for this provider: use detected models from provider.models
-  // For each model, try to find known dimension from knownEmbeddingModels
-  const providerEmbeddingModels: EmbeddingModelInfo[] = provider.models.map((modelId) => {
-    // Look up in known models (try with and without provider prefix)
-    const knownModel = knownEmbeddingModels.find(
-      (m) => m.id === modelId || m.id === `${provider.id}/${modelId}`
-    );
-    return {
-      id: modelId,
-      displayName: knownModel?.displayName ?? modelId,
-      dimension: knownModel?.dimension ?? 0, // 0 means unknown, will auto-detect
-      provider: provider.id,
-      isLocal: isLocal ?? false,
-    };
-  });
+  // Get embedding models for this provider:
+  // - For cloud providers (OpenAI): use known embedding models filtered by provider
+  // - For local providers (Ollama, LM Studio): use detected models from provider.models
+  const providerEmbeddingModels: EmbeddingModelInfo[] = isLocal
+    ? provider.models.map((modelId) => {
+        // For local providers, use detected models and look up dimension if known
+        const knownModel = knownEmbeddingModels.find(
+          (m) => m.id === modelId || m.id === `${provider.id}/${modelId}`
+        );
+        return {
+          id: modelId,
+          displayName: knownModel?.displayName ?? modelId,
+          dimension: knownModel?.dimension ?? 0, // 0 means unknown, will auto-detect
+          provider: provider.id,
+          isLocal: true,
+        };
+      })
+    : knownEmbeddingModels.filter((m) => m.provider === provider.id);
 
   const handleEmbeddingToggle = async () => {
     if (!isEmbeddingProvider && onEmbeddingChange) {
       const defaults = DEFAULT_EMBEDDING_MODELS[provider.id];
       if (defaults) {
         await onEmbeddingChange(provider.id, defaults.model, defaults.dimension);
-      } else if (provider.models.length > 0) {
-        // Use first detected model as fallback
-        const firstModel = provider.models[0];
-        const knownModel = knownEmbeddingModels.find((m) => m.id === firstModel);
-        let dimension = knownModel?.dimension ?? 0;
+      } else if (providerEmbeddingModels.length > 0) {
+        // Use first available embedding model as fallback
+        const firstModel = providerEmbeddingModels[0];
+        let dimension = firstModel.dimension;
         
         // If dimension unknown, try to detect it
         if (dimension === 0) {
           setIsDetectingDimension(true);
           try {
-            const fullModelId = `${provider.id}/${firstModel}`;
+            const fullModelId = `${provider.id}/${firstModel.id}`;
             const result = await detectEmbeddingDimension(fullModelId);
             dimension = result.dimension;
           } catch (err) {
@@ -821,7 +823,7 @@ function ProviderCard({
           }
         }
         
-        await onEmbeddingChange(provider.id, firstModel, dimension);
+        await onEmbeddingChange(provider.id, firstModel.id, dimension);
       }
     }
     // Note: No "disable" - user must enable another provider

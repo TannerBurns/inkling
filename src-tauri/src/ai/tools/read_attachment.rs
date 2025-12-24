@@ -7,8 +7,6 @@
 //! - PowerPoint presentations (pptx)
 //! - Plain text and code files
 
-#![allow(dead_code)]
-
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
@@ -16,33 +14,7 @@ use std::path::Path;
 use calamine::{open_workbook_auto, DataType, Reader};
 use quick_xml::events::Event;
 use quick_xml::reader::Reader as XmlReader;
-use serde_json::json;
 use zip::ZipArchive;
-
-use crate::ai::agent::ToolDefinition;
-
-/// Get the tool definition for read_attachment
-pub fn get_read_attachment_tool() -> ToolDefinition {
-    ToolDefinition::function(
-        "read_attachment",
-        "Extract text content from an attached document (PDF, Word, Excel, PowerPoint, or text file).",
-        json!({
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "The file path to the attachment"
-                },
-                "max_chars": {
-                    "type": "integer",
-                    "description": "Maximum characters to extract (default: 50000)",
-                    "default": 50000
-                }
-            },
-            "required": ["path"]
-        }),
-    )
-}
 
 /// Extract text from an attachment based on file type
 pub fn extract_text_from_attachment(path: &str, max_chars: Option<usize>) -> Result<String, String> {
@@ -275,48 +247,9 @@ fn read_text_file(path: &str) -> Result<String, String> {
         .map_err(|e| format!("Failed to read text file: {}", e))
 }
 
-/// Execute the read_attachment tool
-pub fn execute_read_attachment(args: serde_json::Value, vault_path: &str) -> Result<String, String> {
-    let relative_path = args
-        .get("path")
-        .and_then(|v| v.as_str())
-        .ok_or("Missing 'path' argument")?;
-
-    let max_chars = args
-        .get("max_chars")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize);
-
-    // Resolve the full path relative to the vault
-    let full_path = if relative_path.starts_with('/') || relative_path.contains(':') {
-        // Already absolute
-        relative_path.to_string()
-    } else {
-        // Relative to vault
-        format!("{}/{}", vault_path.trim_end_matches('/'), relative_path.trim_start_matches('/'))
-    };
-
-    let content = extract_text_from_attachment(&full_path, max_chars)?;
-
-    Ok(json!({
-        "success": true,
-        "path": relative_path,
-        "content": content,
-        "chars": content.len()
-    })
-    .to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_get_read_attachment_tool() {
-        let tool = get_read_attachment_tool();
-        assert_eq!(tool.function.name, "read_attachment");
-        assert!(tool.function.description.contains("Extract"));
-    }
 
     #[test]
     fn test_extract_text_from_ooxml() {

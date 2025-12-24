@@ -1,7 +1,5 @@
 pub mod agent;
 mod config;
-pub mod context;
-pub mod embed_queue;
 pub mod embeddings;
 pub mod export_agent;
 pub mod inline_assistant;

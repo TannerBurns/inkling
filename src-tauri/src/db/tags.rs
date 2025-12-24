@@ -2,8 +2,6 @@
 //!
 //! Provides CRUD operations for tags and note-tag associations.
 
-#![allow(dead_code)]
-
 use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 use uuid::Uuid;
@@ -165,52 +163,6 @@ pub fn remove_tag_from_note(conn: &Connection, note_id: &str, tag_id: &str) -> R
         params![note_id, tag_id],
     )?;
     Ok(rows_affected > 0)
-}
-
-/// Set all tags for a note (replaces existing tags)
-pub fn set_note_tags(conn: &Connection, note_id: &str, tag_ids: &[String]) -> Result<(), TagDbError> {
-    // Remove all existing tags
-    conn.execute("DELETE FROM note_tags WHERE note_id = ?1", [note_id])?;
-    
-    // Add new tags
-    for tag_id in tag_ids {
-        conn.execute(
-            "INSERT INTO note_tags (note_id, tag_id) VALUES (?1, ?2)",
-            params![note_id, tag_id],
-        )?;
-    }
-    
-    Ok(())
-}
-
-/// Clear all tags from a note
-pub fn clear_note_tags(conn: &Connection, note_id: &str) -> Result<(), TagDbError> {
-    conn.execute("DELETE FROM note_tags WHERE note_id = ?1", [note_id])?;
-    Ok(())
-}
-
-/// Get notes that have a specific tag
-pub fn get_notes_with_tag(conn: &Connection, tag_id: &str) -> Result<Vec<String>, TagDbError> {
-    let mut stmt = conn.prepare(
-        "SELECT note_id FROM note_tags WHERE tag_id = ?1"
-    )?;
-    
-    let note_ids = stmt
-        .query_map([tag_id], |row| row.get(0))?
-        .filter_map(Result::ok)
-        .collect();
-    
-    Ok(note_ids)
-}
-
-/// Get tag usage count (how many notes have this tag)
-pub fn get_tag_usage_count(conn: &Connection, tag_id: &str) -> Result<usize, TagDbError> {
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM note_tags WHERE tag_id = ?1",
-        [tag_id],
-        |row| row.get(0),
-    )?;
-    Ok(count as usize)
 }
 
 #[cfg(test)]

@@ -7,8 +7,6 @@
 //! - VLLM
 //! - Any OpenAI-compatible endpoint
 
-#![allow(dead_code)]
-
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -18,8 +16,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use super::{
-    ChatMessage, ChatRequest, ChatResponse, EmbedInput, EmbedRequest, EmbedResponse, EmbedUsage,
-    FunctionCall, LlmClient, LlmError, StreamEvent, TokenUsage, ToolCall, ToolDefinition,
+    ChatMessage, ChatRequest, ChatResponse, FunctionCall, LlmClient, LlmError, StreamEvent,
+    TokenUsage, ToolCall, ToolDefinition,
 };
 
 /// OpenAI-compatible LLM client
@@ -103,10 +101,6 @@ impl OpenAIClient {
 
 #[async_trait]
 impl LlmClient for OpenAIClient {
-    fn provider_name(&self) -> &'static str {
-        "OpenAI"
-    }
-
     async fn chat(&self, request: ChatRequest) -> Result<ChatResponse, LlmError> {
         let url = format!("{}/chat/completions", self.base_url);
 
@@ -373,80 +367,6 @@ impl LlmClient for OpenAIClient {
 
         Ok(rx)
     }
-
-    async fn embed(&self, request: EmbedRequest) -> Result<EmbedResponse, LlmError> {
-        let url = format!("{}/embeddings", self.base_url);
-
-        let input = match &request.input {
-            EmbedInput::Single(text) => serde_json::json!(text),
-            EmbedInput::Batch(texts) => serde_json::json!(texts),
-        };
-
-        let mut body = serde_json::json!({
-            "model": request.model,
-            "input": input,
-        });
-
-        if let Some(ref format) = request.encoding_format {
-            body["encoding_format"] = serde_json::json!(format);
-        }
-
-        if let Some(dimensions) = request.dimensions {
-            body["dimensions"] = serde_json::json!(dimensions);
-        }
-
-        let response = self
-            .client
-            .post(&url)
-            .headers(self.headers())
-            .json(&body)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status().as_u16();
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(LlmError::ApiError {
-                status,
-                message: error_text,
-            });
-        }
-
-        let response_body: OpenAIEmbeddingResponse = response.json().await?;
-
-        let embeddings = response_body
-            .data
-            .into_iter()
-            .map(|d| d.embedding)
-            .collect();
-
-        Ok(EmbedResponse {
-            embeddings,
-            model: response_body.model,
-            usage: response_body.usage.map(|u| EmbedUsage {
-                prompt_tokens: u.prompt_tokens,
-                total_tokens: u.total_tokens,
-            }),
-        })
-    }
-
-    async fn health_check(&self) -> Result<bool, LlmError> {
-        // Try to list models as a health check
-        let url = format!("{}/models", self.base_url);
-
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.headers())
-            .timeout(Duration::from_secs(5))
-            .send()
-            .await;
-
-        match response {
-            Ok(resp) => Ok(resp.status().is_success()),
-            Err(_) => Ok(false),
-        }
-    }
 }
 
 // ============================================================================
@@ -548,23 +468,4 @@ struct OpenAIStreamToolCall {
 struct OpenAIStreamFunctionCall {
     name: Option<String>,
     arguments: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAIEmbeddingResponse {
-    data: Vec<OpenAIEmbeddingData>,
-    model: String,
-    usage: Option<OpenAIEmbeddingUsage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAIEmbeddingData {
-    embedding: Vec<f32>,
-    index: usize,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAIEmbeddingUsage {
-    prompt_tokens: u32,
-    total_tokens: u32,
 }

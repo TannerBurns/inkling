@@ -5,8 +5,6 @@
 //! - Native tool calling
 //! - Streaming with thinking and content blocks
 
-#![allow(dead_code)]
-
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -16,9 +14,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use super::{
-    ChatMessage, ChatRequest, ChatResponse, EmbedRequest, EmbedResponse,
-    FunctionCall, LlmClient, LlmError, MessageRole, StreamEvent, TokenUsage, ToolCall,
-    ToolDefinition,
+    ChatMessage, ChatRequest, ChatResponse, FunctionCall, LlmClient, LlmError, MessageRole,
+    StreamEvent, TokenUsage, ToolCall, ToolDefinition,
 };
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1";
@@ -137,10 +134,6 @@ impl AnthropicClient {
 
 #[async_trait]
 impl LlmClient for AnthropicClient {
-    fn provider_name(&self) -> &'static str {
-        "Anthropic"
-    }
-
     async fn chat(&self, request: ChatRequest) -> Result<ChatResponse, LlmError> {
         let url = format!("{}/messages", ANTHROPIC_API_URL);
         let (system, messages) = self.convert_messages(&request.messages);
@@ -428,38 +421,6 @@ impl LlmClient for AnthropicClient {
         });
 
         Ok(rx)
-    }
-
-    async fn embed(&self, _request: EmbedRequest) -> Result<EmbedResponse, LlmError> {
-        // Anthropic doesn't have an embeddings API
-        Err(LlmError::Unsupported(
-            "Anthropic does not support embeddings".to_string(),
-        ))
-    }
-
-    async fn health_check(&self) -> Result<bool, LlmError> {
-        // Try a minimal request to check if the API is reachable
-        let url = format!("{}/messages", ANTHROPIC_API_URL);
-
-        let body = serde_json::json!({
-            "model": "claude-3-haiku-20240307",
-            "messages": [{"role": "user", "content": "hi"}],
-            "max_tokens": 1,
-        });
-
-        let response = self
-            .client
-            .post(&url)
-            .headers(self.headers(false))
-            .json(&body)
-            .timeout(Duration::from_secs(10))
-            .send()
-            .await;
-
-        match response {
-            Ok(resp) => Ok(resp.status().is_success() || resp.status().as_u16() == 400),
-            Err(_) => Ok(false),
-        }
     }
 }
 

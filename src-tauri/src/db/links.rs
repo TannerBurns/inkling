@@ -3,8 +3,6 @@
 //! Manages the `note_links` table that tracks connections between notes
 //! created via `[[note]]` syntax.
 
-#![allow(dead_code)]
-
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -54,19 +52,6 @@ pub fn create_link(
         params![source_id, target_id, context],
     )?;
     Ok(())
-}
-
-/// Delete a specific link
-pub fn delete_link(
-    conn: &Connection,
-    source_id: &str,
-    target_id: &str,
-) -> Result<bool, LinkDbError> {
-    let rows_affected = conn.execute(
-        "DELETE FROM note_links WHERE source_note_id = ?1 AND target_note_id = ?2",
-        params![source_id, target_id],
-    )?;
-    Ok(rows_affected > 0)
 }
 
 /// Delete all outgoing links from a note
@@ -122,20 +107,6 @@ pub fn get_backlinks(conn: &Connection, target_id: &str) -> Result<Vec<Backlink>
         .collect();
 
     Ok(backlinks)
-}
-
-/// Check if a specific link exists
-pub fn link_exists(
-    conn: &Connection,
-    source_id: &str,
-    target_id: &str,
-) -> Result<bool, LinkDbError> {
-    let count: i32 = conn.query_row(
-        "SELECT COUNT(*) FROM note_links WHERE source_note_id = ?1 AND target_note_id = ?2",
-        params![source_id, target_id],
-        |row| row.get(0),
-    )?;
-    Ok(count > 0)
 }
 
 /// Sync all outgoing links for a note
@@ -341,19 +312,6 @@ mod tests {
         let links = get_outgoing_links(&conn, "note1").unwrap();
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].target_note_id, "note3");
-    }
-
-    #[test]
-    fn test_delete_link() {
-        let pool = init_test_pool().unwrap();
-        let conn = pool.get().unwrap();
-        setup_test_notes(&conn);
-
-        create_link(&conn, "note1", "note2", None).unwrap();
-        assert!(link_exists(&conn, "note1", "note2").unwrap());
-
-        delete_link(&conn, "note1", "note2").unwrap();
-        assert!(!link_exists(&conn, "note1", "note2").unwrap());
     }
 
     #[test]

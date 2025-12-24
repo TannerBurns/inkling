@@ -4,8 +4,6 @@
 //! Gathers information from notes, web searches, and synthesizes findings
 //! into comprehensive research notes streamed in real-time.
 
-#![allow(dead_code)]
-
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -80,7 +78,6 @@ pub struct ResearchAgent {
     pool: DbPool,
     provider: AIProvider,
     config: AgentConfig,
-    vault_path: String,
     chunks_appended: Arc<std::sync::atomic::AtomicUsize>,
     notes_searched: Arc<std::sync::atomic::AtomicUsize>,
 }
@@ -93,7 +90,6 @@ impl ResearchAgent {
         pool: DbPool,
         provider: AIProvider,
         config: AgentConfig,
-        vault_path: String,
     ) -> Self {
         Self {
             app_handle,
@@ -101,7 +97,6 @@ impl ResearchAgent {
             pool,
             provider,
             config,
-            vault_path,
             chunks_appended: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             notes_searched: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
@@ -202,7 +197,7 @@ pub async fn run_research_agent(
     model: &str,
     topic: &str,
     context: Option<&str>,
-    vault_path: &str,
+    _vault_path: &str,
     config: AgentConfig,
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<ResearchResult, AgentError> {
@@ -219,7 +214,6 @@ pub async fn run_research_agent(
         pool.clone(),
         provider.clone(),
         config.clone(),
-        vault_path.to_string(),
     );
 
     let tools = get_research_tools(&config);

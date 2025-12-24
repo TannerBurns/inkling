@@ -2,8 +2,6 @@
 //!
 //! These types provide a unified interface across all LLM providers.
 
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -19,12 +17,8 @@ pub enum LlmError {
     MissingApiKey,
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
-    #[error("Stream error: {0}")]
-    StreamError(String),
     #[error("Provider not configured: {0}")]
     NotConfigured(String),
-    #[error("Unsupported operation: {0}")]
-    Unsupported(String),
 }
 
 /// Role of a message in a conversation
@@ -88,24 +82,6 @@ impl ChatMessage {
             tool_call_id: None,
         }
     }
-
-    pub fn assistant_with_tool_calls(tool_calls: Vec<ToolCall>) -> Self {
-        Self {
-            role: MessageRole::Assistant,
-            content: None,
-            tool_calls: Some(tool_calls),
-            tool_call_id: None,
-        }
-    }
-
-    pub fn tool_result(tool_call_id: &str, content: &str) -> Self {
-        Self {
-            role: MessageRole::Tool,
-            content: Some(content.to_string()),
-            tool_calls: None,
-            tool_call_id: Some(tool_call_id.to_string()),
-        }
-    }
 }
 
 /// A tool call requested by the model
@@ -140,19 +116,6 @@ pub struct FunctionDefinition {
     pub parameters: Value,
 }
 
-impl ToolDefinition {
-    /// Create a new function tool definition
-    pub fn function(name: &str, description: &str, parameters: Value) -> Self {
-        Self {
-            tool_type: "function".to_string(),
-            function: FunctionDefinition {
-                name: name.to_string(),
-                description: description.to_string(),
-                parameters,
-            },
-        }
-    }
-}
 
 /// Request for a chat completion
 #[derive(Debug, Clone)]
@@ -169,8 +132,6 @@ pub struct ChatRequest {
     pub max_tokens: Option<u32>,
     /// Temperature for sampling
     pub temperature: Option<f32>,
-    /// Whether to stream the response
-    pub stream: bool,
     /// Enable reasoning/thinking mode if supported
     pub enable_reasoning: bool,
     /// Reasoning effort for OpenAI models (low, medium, high)
@@ -188,7 +149,6 @@ impl Default for ChatRequest {
             tool_choice: None,
             max_tokens: None,
             temperature: None,
-            stream: false,
             enable_reasoning: false,
             reasoning_effort: None,
             thinking_budget: None,
@@ -250,54 +210,4 @@ pub enum StreamEvent {
     Error {
         message: String,
     },
-}
-
-/// Request for embedding generation
-#[derive(Debug, Clone)]
-pub struct EmbedRequest {
-    /// Model identifier (without provider prefix)
-    pub model: String,
-    /// Text(s) to embed
-    pub input: EmbedInput,
-    /// Encoding format (default: "float")
-    pub encoding_format: Option<String>,
-    /// Target dimensions (if supported by model)
-    pub dimensions: Option<u32>,
-}
-
-/// Input for embedding request
-#[derive(Debug, Clone)]
-pub enum EmbedInput {
-    Single(String),
-    Batch(Vec<String>),
-}
-
-/// Response from embedding generation
-#[derive(Debug, Clone)]
-pub struct EmbedResponse {
-    /// The embedding vectors
-    pub embeddings: Vec<Vec<f32>>,
-    /// Model used
-    pub model: String,
-    /// Token usage
-    pub usage: Option<EmbedUsage>,
-}
-
-/// Token usage for embeddings
-#[derive(Debug, Clone)]
-pub struct EmbedUsage {
-    pub prompt_tokens: u32,
-    pub total_tokens: u32,
-}
-
-/// Provider type for client creation
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LlmProviderType {
-    OpenAI,
-    Anthropic,
-    Google,
-    Ollama,
-    LMStudio,
-    VLLM,
-    Custom,
 }

@@ -2,15 +2,13 @@
 //!
 //! Handles CRUD operations for chat conversations, messages, and message context.
 
-#![allow(dead_code)]
-
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 use uuid::Uuid;
 
 use crate::models::{
-    Conversation, ContextItem, Message, MessageContext, MessageMetadata, MessageRole,
+    Conversation, Message, MessageContext, MessageMetadata, MessageRole,
 };
 
 #[derive(Error, Debug)]
@@ -148,16 +146,6 @@ pub fn list_conversation_previews(
         .collect();
 
     Ok(previews)
-}
-
-/// Get the message count for a conversation
-pub fn get_message_count(conn: &Connection, conversation_id: &str) -> Result<u32, ConversationDbError> {
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM messages WHERE conversation_id = ?1",
-        [conversation_id],
-        |row| row.get(0),
-    )?;
-    Ok(count as u32)
 }
 
 /// Update a conversation
@@ -363,36 +351,6 @@ pub fn get_conversation_messages_paginated(
     Ok(messages)
 }
 
-/// Update message metadata (e.g., add citations after streaming completes)
-pub fn update_message_metadata(
-    conn: &Connection,
-    message_id: &str,
-    metadata: &MessageMetadata,
-) -> Result<(), ConversationDbError> {
-    let metadata_json = serde_json::to_string(metadata)?;
-
-    conn.execute(
-        "UPDATE messages SET metadata = ?1 WHERE id = ?2",
-        params![metadata_json, message_id],
-    )?;
-
-    Ok(())
-}
-
-/// Update message content
-pub fn update_message_content(
-    conn: &Connection,
-    message_id: &str,
-    content: &str,
-) -> Result<(), ConversationDbError> {
-    conn.execute(
-        "UPDATE messages SET content = ?1 WHERE id = ?2",
-        params![content, message_id],
-    )?;
-
-    Ok(())
-}
-
 /// Delete all messages from a given message onwards (inclusive)
 /// Used when editing a message - deletes the original and all subsequent messages
 pub fn delete_messages_from(
@@ -413,12 +371,6 @@ pub fn delete_messages_from(
     )?;
 
     Ok(rows_affected)
-}
-
-/// Delete a single message by ID
-pub fn delete_message(conn: &Connection, id: &str) -> Result<bool, ConversationDbError> {
-    let rows_affected = conn.execute("DELETE FROM messages WHERE id = ?1", [id])?;
-    Ok(rows_affected > 0)
 }
 
 // ============================================================================
@@ -448,60 +400,6 @@ pub fn add_message_context(
         content_snippet: content_snippet.map(String::from),
         is_full_note,
     })
-}
-
-/// Get all context items for a message
-pub fn get_message_context(
-    conn: &Connection,
-    message_id: &str,
-) -> Result<Vec<MessageContext>, ConversationDbError> {
-    let mut stmt = conn.prepare(
-        "SELECT id, message_id, note_id, content_snippet, is_full_note
-         FROM message_context
-         WHERE message_id = ?1",
-    )?;
-
-    let contexts = stmt
-        .query_map([message_id], |row| {
-            Ok(MessageContext {
-                id: row.get(0)?,
-                message_id: row.get(1)?,
-                note_id: row.get(2)?,
-                content_snippet: row.get(3)?,
-                is_full_note: row.get(4)?,
-            })
-        })?
-        .filter_map(Result::ok)
-        .collect();
-
-    Ok(contexts)
-}
-
-/// Get context items as ContextItem structs (with note titles)
-pub fn get_message_context_items(
-    conn: &Connection,
-    message_id: &str,
-) -> Result<Vec<ContextItem>, ConversationDbError> {
-    let mut stmt = conn.prepare(
-        "SELECT mc.note_id, n.title, mc.content_snippet, mc.is_full_note
-         FROM message_context mc
-         JOIN notes n ON n.id = mc.note_id
-         WHERE mc.message_id = ?1",
-    )?;
-
-    let items = stmt
-        .query_map([message_id], |row| {
-            Ok(ContextItem {
-                note_id: row.get(0)?,
-                note_title: row.get(1)?,
-                content_snippet: row.get(2)?,
-                is_full_note: row.get(3)?,
-            })
-        })?
-        .filter_map(Result::ok)
-        .collect();
-
-    Ok(items)
 }
 
 // ============================================================================
@@ -552,8 +450,8 @@ mod tests {
 
         let conv = create_conversation(&conn, Some("Test"), None).unwrap();
 
-        let msg1 = create_message(&conn, &conv.id, MessageRole::User, "Hello", None).unwrap();
-        let msg2 = create_message(&conn, &conv.id, MessageRole::Assistant, "Hi there!", None).unwrap();
+        let _msg1 = create_message(&conn, &conv.id, MessageRole::User, "Hello", None).unwrap();
+        let _msg2 = create_message(&conn, &conv.id, MessageRole::Assistant, "Hi there!", None).unwrap();
 
         let messages = get_conversation_messages(&conn, &conv.id).unwrap();
         assert_eq!(messages.len(), 2);

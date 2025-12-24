@@ -263,12 +263,13 @@ function AIBlockComponent({ node, updateAttributes, deleteNode, editor }: NodeVi
       );
       unlistenRef.current = unlisten;
 
-      // Execute the agent
+      // Execute the agent with the current note content as context
       console.log("[AIBlock] Calling execute_inline_agent...");
+      const noteContext = editor?.getText() ?? undefined;
       const result = await agentsApi.executeInlineAgent(
         executionId,
         inputValue,
-        undefined // Could pass current note context here
+        noteContext
       );
       console.log("[AIBlock] Agent result:", result);
 

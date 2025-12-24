@@ -6,8 +6,6 @@
 //! Tools follow the OpenAI function calling format and can be composed
 //! into different agent configurations.
 
-#![allow(dead_code)]
-
 pub mod append_to_note;
 pub mod document_builder;
 pub mod export_notes;
@@ -33,7 +31,7 @@ pub type ToolFunction = Box<dyn Fn(serde_json::Value) -> Result<String, String> 
 // ============================================================================
 
 /// Configuration for agent tools and behavior
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentConfig {
     /// Whether the inline assistant is enabled
@@ -55,6 +53,18 @@ pub struct AgentConfig {
     /// Diagram configuration
     #[serde(default)]
     pub diagram: DiagramConfig,
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_enabled(),
+            enabled_tools: default_enabled_tools(),
+            web_search: WebSearchConfig::default(),
+            image: ImageConfig::default(),
+            diagram: DiagramConfig::default(),
+        }
+    }
 }
 
 fn default_enabled() -> bool {
@@ -183,57 +193,6 @@ pub struct DiagramConfig {
     pub default_format: DiagramFormat,
 }
 
-// ============================================================================
-// Tool Helpers
-// ============================================================================
-
-/// Get the list of all available tool names
-pub fn get_all_tool_names() -> Vec<&'static str> {
-    vec![
-        "search_notes",
-        "web_search",
-        "fetch_image",
-        "generate_image",
-        "create_mermaid",
-        "create_excalidraw",
-        "write_content",
-        "append_to_note",
-        "read_attachment",
-        "export_notes_pdf",
-        "export_notes_docx",
-        "export_selection_xlsx",
-        "create_document",
-        "add_section",
-        "add_table",
-        "save_document",
-        "cancel_document",
-    ]
-}
-
-/// Get a human-readable description for a tool
-pub fn get_tool_description(tool_name: &str) -> &'static str {
-    match tool_name {
-        "search_notes" => "Search your notes for relevant information",
-        "web_search" => "Search the web for current information",
-        "fetch_image" => "Find a relevant image from Unsplash",
-        "generate_image" => "Generate an image using AI",
-        "create_mermaid" => "Create a Mermaid diagram (flowcharts, sequences, etc.)",
-        "create_excalidraw" => "Create an Excalidraw sketch diagram",
-        "write_content" => "Output markdown content to be inserted",
-        "append_to_note" => "Append content to the current note in real-time",
-        "read_attachment" => "Extract text from attached documents (PDF, Word, Excel, etc.)",
-        "export_notes_pdf" => "Export notes to a PDF document",
-        "export_notes_docx" => "Export notes to a Word document",
-        "export_selection_xlsx" => "Export table content to an Excel spreadsheet",
-        "create_document" => "Create a new document draft for building incrementally",
-        "add_section" => "Add a section to a document draft",
-        "add_table" => "Add a table to a document draft",
-        "save_document" => "Save a completed document draft to file",
-        "cancel_document" => "Cancel and discard a document draft",
-        _ => "Unknown tool",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,13 +216,5 @@ mod tests {
             api_key: Some("test-key".to_string()),
         };
         assert!(configured.is_configured());
-    }
-
-    #[test]
-    fn test_get_all_tool_names() {
-        let names = get_all_tool_names();
-        assert!(names.contains(&"search_notes"));
-        assert!(names.contains(&"web_search"));
-        assert!(names.contains(&"create_mermaid"));
     }
 }

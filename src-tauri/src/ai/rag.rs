@@ -5,8 +5,6 @@
 //!
 //! NOTE: Contains utilities for future RAG enhancements.
 
-#![allow(dead_code)]
-
 use crate::db::{self, embeddings::search_similar, connection::DbPool};
 use crate::models::{Citation, ContextItem};
 use serde::{Deserialize, Serialize};
@@ -91,11 +89,6 @@ impl RagContext {
     pub fn is_empty(&self) -> bool {
         self.explicit_context.is_empty() && self.retrieved_context.is_empty()
     }
-    
-    /// Get total number of context items
-    pub fn len(&self) -> usize {
-        self.explicit_context.len() + self.retrieved_context.len()
-    }
 }
 
 /// Build context for a RAG query
@@ -139,21 +132,22 @@ pub async fn build_context(
     };
     
     // 2. Get embedding config and model (sync db operation)
-    let (embedding_model, provider_url) = if auto_retrieve_count > 0 && !query.trim().is_empty() {
+    let (embedding_model, provider_url, api_key) = if auto_retrieve_count > 0 && !query.trim().is_empty() {
         let conn = pool.get().map_err(|e| RagError::DatabaseError(e.to_string()))?;
         let config = load_ai_config(&conn).map_err(|e| RagError::DatabaseError(e))?;
-        let provider_url = config.providers.iter()
-            .find(|p| p.id == config.embedding.provider)
-            .and_then(|p| p.base_url.clone());
-        (Some(config.embedding.full_model_id()), provider_url)
+        let embedding_provider = config.providers.iter()
+            .find(|p| p.id == config.embedding.provider);
+        let provider_url = embedding_provider.and_then(|p| p.base_url.clone());
+        let api_key = embedding_provider.and_then(|p| p.api_key.clone());
+        (Some(config.embedding.full_model_id()), provider_url, api_key)
     } else {
-        (None, None)
+        (None, None, None)
     };
     
     // 3. Generate query embedding (async operation - no db reference held)
     let query_embedding = if let Some(ref model) = embedding_model {
         Some(
-            super::generate_embedding_direct(query, model, provider_url.as_deref())
+            super::generate_embedding_direct(query, model, provider_url.as_deref(), api_key.as_deref())
                 .await
                 .map_err(|e| RagError::EmbeddingError(e.to_string()))?
         )
@@ -246,44 +240,6 @@ pub fn format_system_prompt(base_prompt: &str, context: &RagContext) -> String {
     
     prompt.push_str("---\n\n");
     prompt
-}
-
-/// Format messages for the chat API
-#[derive(Debug, Clone, Serialize)]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
-}
-
-/// Format a conversation for the API
-pub fn format_messages(
-    system_prompt: &str,
-    conversation_history: Vec<(String, String)>, // (role, content) pairs
-    current_message: &str,
-) -> Vec<ChatMessage> {
-    let mut messages = Vec::new();
-    
-    // Add system prompt
-    messages.push(ChatMessage {
-        role: "system".to_string(),
-        content: system_prompt.to_string(),
-    });
-    
-    // Add conversation history
-    for (role, content) in conversation_history {
-        messages.push(ChatMessage {
-            role,
-            content,
-        });
-    }
-    
-    // Add current user message
-    messages.push(ChatMessage {
-        role: "user".to_string(),
-        content: current_message.to_string(),
-    });
-    
-    messages
 }
 
 /// Truncate content for context, preserving word boundaries

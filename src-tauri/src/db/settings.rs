@@ -2,8 +2,6 @@
 //!
 //! Generic key-value settings storage using the settings table.
 
-#![allow(dead_code)]
-
 use rusqlite::{params, Connection, OptionalExtension};
 use thiserror::Error;
 
@@ -41,18 +39,6 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), Sett
 pub fn delete_setting(conn: &Connection, key: &str) -> Result<bool, SettingsError> {
     let rows_affected = conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
     Ok(rows_affected > 0)
-}
-
-/// Get all settings as key-value pairs
-pub fn get_all_settings(conn: &Connection) -> Result<Vec<(String, String)>, SettingsError> {
-    let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
-    
-    let settings: Vec<(String, String)> = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .filter_map(Result::ok)
-        .collect();
-
-    Ok(settings)
 }
 
 #[cfg(test)]

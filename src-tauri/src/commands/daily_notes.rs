@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use tauri::State;
 
 use crate::db::folders as folders_db;
@@ -10,9 +8,6 @@ use crate::{AppPool, AppSearchIndex};
 
 /// The name of the system Daily Notes folder
 pub const DAILY_NOTES_FOLDER_NAME: &str = "Daily Notes";
-
-/// Date format used for daily note titles
-pub const DAILY_NOTE_DATE_FORMAT: &str = "%Y-%m-%d";
 
 /// Get the Daily Notes folder, creating it if it doesn't exist
 #[tauri::command]

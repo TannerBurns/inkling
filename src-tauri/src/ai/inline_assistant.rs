@@ -6,15 +6,13 @@
 //!
 //! NOTE: This module is being integrated via the agent command system.
 
-#![allow(dead_code)]
-
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::db::connection::DbPool;
 
-use super::agent::{run_agent, run_agent_with_events, AgentError, CancellationToken, ToolDefinition, ToolExecutor};
+use super::agent::{run_agent_with_events, AgentError, CancellationToken, ToolDefinition, ToolExecutor};
 use super::config::AIProvider;
 use super::tools::{
     execute_export_notes_docx, execute_export_notes_pdf, execute_export_selection_xlsx,
@@ -97,8 +95,6 @@ pub struct InlineAssistant {
     pool: DbPool,
     provider: AIProvider,
     config: AgentConfig,
-    /// Current note context (optional)
-    note_context: Option<String>,
 }
 
 impl InlineAssistant {
@@ -107,13 +103,11 @@ impl InlineAssistant {
         pool: DbPool,
         provider: AIProvider,
         config: AgentConfig,
-        note_context: Option<String>,
     ) -> Self {
         Self {
             pool,
             provider,
             config,
-            note_context,
         }
     }
 
@@ -448,72 +442,42 @@ pub fn get_inline_assistant_tools(config: &AgentConfig) -> Vec<ToolDefinition> {
     tools
 }
 
+/// Maximum characters for note context in system prompt
+/// This is generous (about 8000 tokens) to allow the full note to be included
+/// while still leaving room for the system prompt and conversation
+const MAX_NOTE_CONTEXT_CHARS: usize = 32000;
+
 /// Build the system prompt with optional note context
 fn build_system_prompt(note_context: Option<&str>) -> String {
     let mut prompt = INLINE_ASSISTANT_SYSTEM_PROMPT.to_string();
 
     if let Some(context) = note_context {
-        prompt.push_str("\n\n---\n\n");
-        prompt.push_str("CURRENT NOTE CONTEXT:\n");
-        prompt.push_str("The user is currently editing a note with the following content:\n\n");
-        
-        // Truncate if too long
-        if context.len() > 2000 {
-            prompt.push_str(&context[..2000]);
-            prompt.push_str("\n... (truncated)");
-        } else {
-            prompt.push_str(context);
+        if !context.trim().is_empty() {
+            prompt.push_str("\n\n---\n\n");
+            prompt.push_str("CURRENT NOTE CONTEXT:\n");
+            prompt.push_str("The user is currently editing a note with the following content. ");
+            prompt.push_str("You have FULL access to this content - do NOT use search_notes to find information that is already provided here.\n\n");
+            
+            // Truncate if too long, trying to break at a paragraph boundary
+            if context.len() > MAX_NOTE_CONTEXT_CHARS {
+                // Try to find a paragraph break near the limit
+                let truncation_point = context[..MAX_NOTE_CONTEXT_CHARS]
+                    .rfind("\n\n")
+                    .or_else(|| context[..MAX_NOTE_CONTEXT_CHARS].rfind('\n'))
+                    .unwrap_or(MAX_NOTE_CONTEXT_CHARS);
+                
+                prompt.push_str(&context[..truncation_point]);
+                prompt.push_str("\n\n... (note truncated, ");
+                prompt.push_str(&format!("{} more characters not shown)", context.len() - truncation_point));
+            } else {
+                prompt.push_str(context);
+            }
+            
+            prompt.push_str("\n\n---\n");
         }
     }
 
     prompt
-}
-
-/// Run the inline assistant agent
-pub async fn run_inline_assistant(
-    pool: &DbPool,
-    provider: &AIProvider,
-    model: &str,
-    request: &str,
-    config: AgentConfig,
-    note_context: Option<&str>,
-) -> Result<InlineAssistantResult, AgentError> {
-    let agent = InlineAssistant::new(
-        pool.clone(),
-        provider.clone(),
-        config.clone(),
-        note_context.map(String::from),
-    );
-
-    let tools = get_inline_assistant_tools(&config);
-    let system_prompt = build_system_prompt(note_context);
-
-    let result = run_agent(
-        provider,
-        model,
-        &system_prompt,
-        request,
-        tools,
-        &agent,
-        30, // Max 30 iterations
-    )
-    .await?;
-
-    // Extract unique tool names used
-    let tools_used: Vec<String> = result
-        .tool_calls_made
-        .iter()
-        .map(|tc| tc.tool_name.clone())
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-
-    Ok(InlineAssistantResult {
-        content: result.final_response,
-        tools_used,
-        iterations: result.iterations,
-        tool_calls: result.tool_calls_made,
-    })
 }
 
 /// Run the inline assistant with event streaming
@@ -532,7 +496,6 @@ pub async fn run_inline_assistant_with_events(
         pool.clone(),
         provider.clone(),
         config.clone(),
-        note_context.map(String::from),
     );
 
     let tools = get_inline_assistant_tools(&config);
