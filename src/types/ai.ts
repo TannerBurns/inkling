@@ -9,6 +9,7 @@ export type ProviderType =
   | "google"
   | "ollama"
   | "lmstudio"
+  | "vllm"
   | "custom";
 
 /** Configuration for a single AI provider */
@@ -40,12 +41,13 @@ export const DEFAULT_CONTEXT_LENGTHS: Record<ProviderType, number> = {
   google: 1_000_000,
   ollama: 32_000,
   lmstudio: 32_000,
+  vllm: 32_000,
   custom: 32_000,
 };
 
 /** Get the effective context length for a provider */
 export function getEffectiveContextLength(provider: AIProvider): number {
-  return provider.contextLength ?? DEFAULT_CONTEXT_LENGTHS[provider.type] ?? 32_000;
+  return provider.contextLength ?? DEFAULT_CONTEXT_LENGTHS[provider.type as ProviderType] ?? 32_000;
 }
 
 /** Configuration for embedding generation */
@@ -119,20 +121,25 @@ export const PROVIDER_DEFAULTS: Record<
     requiresApiKey: false,
     defaultBaseUrl: "http://localhost:1234/v1",
   },
+  vllm: {
+    name: "VLLM",
+    requiresApiKey: false,
+    defaultBaseUrl: "http://localhost:8000",
+  },
   custom: { name: "Custom", requiresApiKey: true },
 };
 
 /** Get display name for provider type */
 export function getProviderDisplayName(type: ProviderType): string {
-  return PROVIDER_DEFAULTS[type].name;
+  return PROVIDER_DEFAULTS[type]?.name ?? type;
 }
 
 /** Check if provider type requires API key */
 export function providerRequiresApiKey(type: ProviderType): boolean {
-  return PROVIDER_DEFAULTS[type].requiresApiKey;
+  return PROVIDER_DEFAULTS[type]?.requiresApiKey ?? true;
 }
 
 /** Check if provider type is a local provider */
 export function isLocalProvider(type: ProviderType): boolean {
-  return type === "ollama" || type === "lmstudio";
+  return type === "ollama" || type === "lmstudio" || type === "vllm";
 }
