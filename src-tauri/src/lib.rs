@@ -10,6 +10,10 @@ mod vault;
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use tauri::{
+    menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder, PredefinedMenuItem},
+    Manager,
+};
 use tokio::sync::watch;
 
 use ai::init_ai_config;
@@ -123,6 +127,110 @@ pub fn run() {
         .manage(app_search_index)
         .manage(active_streams)
         .manage(agent_executions)
+        .setup(|app| {
+            // Build the application menu
+            let app_menu = SubmenuBuilder::new(app, "Inkling")
+                .item(&PredefinedMenuItem::about(app, Some("About Inkling"), None)?)
+                .separator()
+                .item(&PredefinedMenuItem::services(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::hide(app, Some("Hide Inkling"))?)
+                .item(&PredefinedMenuItem::hide_others(app, Some("Hide Others"))?)
+                .item(&PredefinedMenuItem::show_all(app, Some("Show All"))?)
+                .separator()
+                .item(&PredefinedMenuItem::quit(app, Some("Quit Inkling"))?)
+                .build()?;
+
+            let file_menu = SubmenuBuilder::new(app, "File")
+                .item(&PredefinedMenuItem::close_window(app, Some("Close Window"))?)
+                .build()?;
+
+            let edit_menu = SubmenuBuilder::new(app, "Edit")
+                .item(&PredefinedMenuItem::undo(app, None)?)
+                .item(&PredefinedMenuItem::redo(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::cut(app, None)?)
+                .item(&PredefinedMenuItem::copy(app, None)?)
+                .item(&PredefinedMenuItem::paste(app, None)?)
+                .item(&PredefinedMenuItem::select_all(app, None)?)
+                .build()?;
+
+            let toggle_devtools = MenuItemBuilder::new("Toggle Developer Tools")
+                .id("toggle_devtools")
+                .accelerator("CmdOrCtrl+Alt+I")
+                .build(app)?;
+
+            let reload = MenuItemBuilder::new("Reload")
+                .id("reload")
+                .accelerator("CmdOrCtrl+R")
+                .build(app)?;
+
+            let force_reload = MenuItemBuilder::new("Force Reload")
+                .id("force_reload")
+                .accelerator("CmdOrCtrl+Shift+R")
+                .build(app)?;
+
+            let view_menu = SubmenuBuilder::new(app, "View")
+                .item(&reload)
+                .item(&force_reload)
+                .separator()
+                .item(&toggle_devtools)
+                .separator()
+                .item(&PredefinedMenuItem::fullscreen(app, None)?)
+                .build()?;
+
+            let window_menu = SubmenuBuilder::new(app, "Window")
+                .item(&PredefinedMenuItem::minimize(app, Some("Minimize"))?)
+                .item(&PredefinedMenuItem::maximize(app, Some("Zoom"))?)
+                .separator()
+                .item(&PredefinedMenuItem::close_window(app, Some("Close"))?)
+                .build()?;
+
+            let menu = MenuBuilder::new(app)
+                .item(&app_menu)
+                .item(&file_menu)
+                .item(&edit_menu)
+                .item(&view_menu)
+                .item(&window_menu)
+                .build()?;
+
+            app.set_menu(menu)?;
+
+            // Handle menu events
+            app.on_menu_event(move |app_handle, event| {
+                match event.id().as_ref() {
+                    "toggle_devtools" => {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            if window.is_devtools_open() {
+                                window.close_devtools();
+                            } else {
+                                window.open_devtools();
+                            }
+                        }
+                    }
+                    "reload" => {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.eval("window.location.reload()");
+                        }
+                    }
+                    "force_reload" => {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.eval("window.location.reload(true)");
+                        }
+                    }
+                    _ => {}
+                }
+            });
+
+            // Open devtools automatically if DEBUG_DEVTOOLS env var is set
+            // Run with: DEBUG_DEVTOOLS=1 ./Inkling.app/Contents/MacOS/Inkling
+            if std::env::var("DEBUG_DEVTOOLS").is_ok() {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.open_devtools();
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // Note commands
             commands::create_note,
