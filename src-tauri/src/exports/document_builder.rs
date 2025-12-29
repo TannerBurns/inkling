@@ -297,7 +297,7 @@ pub fn save_document(document_id: &str) -> Result<Export, String> {
 
     // Convert to markdown and parse
     let markdown = draft.to_markdown();
-    log::info!("[DocumentBuilder] Generated markdown ({} chars):\n{}", markdown.len(), &markdown[..markdown.len().min(1000)]);
+    log::info!("[DocumentBuilder] Generated markdown ({} chars):\n{}", markdown.len(), markdown.chars().take(1000).collect::<String>());
     
     let parsed_content = parse_markdown(&markdown);
     log::info!("[DocumentBuilder] Parsed {} content blocks", parsed_content.blocks.len());

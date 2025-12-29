@@ -12,13 +12,32 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder, PredefinedMenuItem},
-    Manager,
+    Emitter, Manager,
 };
 use tokio::sync::watch;
 
 use ai::init_ai_config;
 use db::connection::{self, DbPool};
 use search::SearchIndex;
+
+/// Open a path or URL in the default system handler
+fn open_path(path: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(path).spawn()?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", path])
+            .spawn()?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open").arg(path).spawn()?;
+    }
+    Ok(())
+}
 
 /// Wrapper for optional pool that can be initialized after vault setup
 pub struct AppPool(pub RwLock<Option<DbPool>>);
@@ -141,7 +160,39 @@ pub fn run() {
                 .item(&PredefinedMenuItem::quit(app, Some("Quit Inkling"))?)
                 .build()?;
 
+            // File menu items
+            let new_note = MenuItemBuilder::new("New Note")
+                .id("new_note")
+                .accelerator("CmdOrCtrl+N")
+                .build(app)?;
+
+            let daily_note = MenuItemBuilder::new("Open Today's Daily Note")
+                .id("daily_note")
+                .accelerator("CmdOrCtrl+D")
+                .build(app)?;
+
+            let open_vault = MenuItemBuilder::new("Open Vault in Finder")
+                .id("open_vault")
+                .build(app)?;
+
+            let export = MenuItemBuilder::new("Export...")
+                .id("export")
+                .build(app)?;
+
+            let preferences = MenuItemBuilder::new("Preferences...")
+                .id("preferences")
+                .accelerator("CmdOrCtrl+,")
+                .build(app)?;
+
             let file_menu = SubmenuBuilder::new(app, "File")
+                .item(&new_note)
+                .item(&daily_note)
+                .separator()
+                .item(&open_vault)
+                .item(&export)
+                .separator()
+                .item(&preferences)
+                .separator()
                 .item(&PredefinedMenuItem::close_window(app, Some("Close Window"))?)
                 .build()?;
 
@@ -155,26 +206,75 @@ pub fn run() {
                 .item(&PredefinedMenuItem::select_all(app, None)?)
                 .build()?;
 
+            // View menu items
+            let toggle_left_sidebar = MenuItemBuilder::new("Toggle Left Sidebar")
+                .id("toggle_left_sidebar")
+                .accelerator("CmdOrCtrl+[")
+                .build(app)?;
+
+            let toggle_right_sidebar = MenuItemBuilder::new("Toggle Right Sidebar")
+                .id("toggle_right_sidebar")
+                .accelerator("CmdOrCtrl+]")
+                .build(app)?;
+
+            let toggle_chat = MenuItemBuilder::new("Toggle Chat Panel")
+                .id("toggle_chat")
+                .accelerator("CmdOrCtrl+Shift+C")
+                .build(app)?;
+
+            let knowledge_graph = MenuItemBuilder::new("Knowledge Graph")
+                .id("knowledge_graph")
+                .accelerator("CmdOrCtrl+G")
+                .build(app)?;
+
+            let calendar = MenuItemBuilder::new("Calendar")
+                .id("calendar")
+                .accelerator("CmdOrCtrl+Shift+D")
+                .build(app)?;
+
+            // Dev tools - only show in debug builds
+            #[cfg(debug_assertions)]
             let toggle_devtools = MenuItemBuilder::new("Toggle Developer Tools")
                 .id("toggle_devtools")
                 .accelerator("CmdOrCtrl+Alt+I")
                 .build(app)?;
 
+            #[cfg(debug_assertions)]
             let reload = MenuItemBuilder::new("Reload")
                 .id("reload")
                 .accelerator("CmdOrCtrl+R")
                 .build(app)?;
 
+            #[cfg(debug_assertions)]
             let force_reload = MenuItemBuilder::new("Force Reload")
                 .id("force_reload")
                 .accelerator("CmdOrCtrl+Shift+R")
                 .build(app)?;
 
+            #[cfg(debug_assertions)]
             let view_menu = SubmenuBuilder::new(app, "View")
+                .item(&toggle_left_sidebar)
+                .item(&toggle_right_sidebar)
+                .item(&toggle_chat)
+                .separator()
+                .item(&knowledge_graph)
+                .item(&calendar)
+                .separator()
                 .item(&reload)
                 .item(&force_reload)
-                .separator()
                 .item(&toggle_devtools)
+                .separator()
+                .item(&PredefinedMenuItem::fullscreen(app, None)?)
+                .build()?;
+
+            #[cfg(not(debug_assertions))]
+            let view_menu = SubmenuBuilder::new(app, "View")
+                .item(&toggle_left_sidebar)
+                .item(&toggle_right_sidebar)
+                .item(&toggle_chat)
+                .separator()
+                .item(&knowledge_graph)
+                .item(&calendar)
                 .separator()
                 .item(&PredefinedMenuItem::fullscreen(app, None)?)
                 .build()?;
@@ -186,12 +286,33 @@ pub fn run() {
                 .item(&PredefinedMenuItem::close_window(app, Some("Close"))?)
                 .build()?;
 
+            // Help menu items
+            let keyboard_shortcuts = MenuItemBuilder::new("Keyboard Shortcuts")
+                .id("keyboard_shortcuts")
+                .build(app)?;
+
+            let documentation = MenuItemBuilder::new("Documentation")
+                .id("documentation")
+                .build(app)?;
+
+            let report_issue = MenuItemBuilder::new("Report an Issue")
+                .id("report_issue")
+                .build(app)?;
+
+            let help_menu = SubmenuBuilder::new(app, "Help")
+                .item(&keyboard_shortcuts)
+                .separator()
+                .item(&documentation)
+                .item(&report_issue)
+                .build()?;
+
             let menu = MenuBuilder::new(app)
                 .item(&app_menu)
                 .item(&file_menu)
                 .item(&edit_menu)
                 .item(&view_menu)
                 .item(&window_menu)
+                .item(&help_menu)
                 .build()?;
 
             app.set_menu(menu)?;
@@ -199,6 +320,55 @@ pub fn run() {
             // Handle menu events
             app.on_menu_event(move |app_handle, event| {
                 match event.id().as_ref() {
+                    // File menu events - emit to frontend
+                    "new_note" => {
+                        let _ = app_handle.emit("menu-event", "new_note");
+                    }
+                    "daily_note" => {
+                        let _ = app_handle.emit("menu-event", "daily_note");
+                    }
+                    "open_vault" => {
+                        // Open vault in Finder/Explorer
+                        if let Some(vault_path) = vault::get_current_vault_path() {
+                            let _ = open_path(vault_path.to_string_lossy().as_ref());
+                        }
+                    }
+                    "export" => {
+                        let _ = app_handle.emit("menu-event", "export");
+                    }
+                    "preferences" => {
+                        let _ = app_handle.emit("menu-event", "preferences");
+                    }
+                    // View menu events - emit to frontend
+                    "toggle_left_sidebar" => {
+                        let _ = app_handle.emit("menu-event", "toggle_left_sidebar");
+                    }
+                    "toggle_right_sidebar" => {
+                        let _ = app_handle.emit("menu-event", "toggle_right_sidebar");
+                    }
+                    "toggle_chat" => {
+                        let _ = app_handle.emit("menu-event", "toggle_chat");
+                    }
+                    "knowledge_graph" => {
+                        let _ = app_handle.emit("menu-event", "knowledge_graph");
+                    }
+                    "calendar" => {
+                        let _ = app_handle.emit("menu-event", "calendar");
+                    }
+                    // Help menu events
+                    "keyboard_shortcuts" => {
+                        let _ = app_handle.emit("menu-event", "keyboard_shortcuts");
+                    }
+                    "documentation" => {
+                        // Open documentation in browser
+                        let _ = open_path("https://github.com/tanner-g/inkling#readme");
+                    }
+                    "report_issue" => {
+                        // Open GitHub issues in browser
+                        let _ = open_path("https://github.com/tanner-g/inkling/issues");
+                    }
+                    // Dev tools (debug builds only)
+                    #[cfg(debug_assertions)]
                     "toggle_devtools" => {
                         if let Some(window) = app_handle.get_webview_window("main") {
                             if window.is_devtools_open() {
@@ -208,11 +378,13 @@ pub fn run() {
                             }
                         }
                     }
+                    #[cfg(debug_assertions)]
                     "reload" => {
                         if let Some(window) = app_handle.get_webview_window("main") {
                             let _ = window.eval("window.location.reload()");
                         }
                     }
+                    #[cfg(debug_assertions)]
                     "force_reload" => {
                         if let Some(window) = app_handle.get_webview_window("main") {
                             let _ = window.eval("window.location.reload(true)");

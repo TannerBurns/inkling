@@ -285,7 +285,7 @@ impl LlmClient for OpenAIClient {
         request: ChatRequest,
     ) -> Result<mpsc::Receiver<StreamEvent>, LlmError> {
         // Check if we should use non-streaming mode (for LMStudio with tools)
-        let has_tools = request.tools.as_ref().map_or(false, |t| !t.is_empty());
+        let has_tools = request.tools.as_ref().is_some_and(|t| !t.is_empty());
         let use_streaming = !(self.disable_streaming_with_tools && has_tools);
 
         if !use_streaming {

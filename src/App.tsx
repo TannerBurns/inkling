@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AppLayout } from "./components/layout/AppLayout";
 import { Sidebar } from "./components/layout/Sidebar";
 import { SplitContainer } from "./components/editor/SplitContainer";
@@ -15,6 +16,7 @@ import { useVaultStore } from "./stores/vaultStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useDailyNotesStore } from "./stores/dailyNotesStore";
 import { useActiveTab, useEditorGroupStore } from "./stores/editorGroupStore";
+import { useExportStore } from "./stores/exportStore";
 import {
   initUrlIndexingListener,
   cleanupUrlIndexingListener,
@@ -30,6 +32,7 @@ function App() {
   const { openSettings } = useSettingsStore();
   const { openTodayNote } = useDailyNotesStore();
   const { openTab } = useEditorGroupStore();
+  const { openExportModal } = useExportStore();
   const {
     isConfigured,
     isLoading: vaultLoading,
@@ -82,6 +85,63 @@ function App() {
       cleanupNoteContentListener();
     };
   }, []);
+
+  // Listen for Tauri menu events
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+
+    const setupMenuListener = async () => {
+      unlisten = await listen<string>("menu-event", async (event) => {
+        switch (event.payload) {
+          case "new_note": {
+            const newNote = await createNote("Untitled", null);
+            if (newNote) {
+              openTab({ type: "note", id: newNote.id });
+            }
+            break;
+          }
+          case "daily_note":
+            openTodayNote();
+            break;
+          case "export":
+            openExportModal();
+            break;
+          case "preferences":
+            openSettings();
+            break;
+          case "toggle_left_sidebar":
+            toggleLeftPanel();
+            break;
+          case "toggle_right_sidebar":
+            toggleRightSidebar();
+            break;
+          case "toggle_chat":
+            toggleChat();
+            break;
+          case "knowledge_graph":
+            openTab({ type: "graph", id: "main" });
+            break;
+          case "calendar":
+            openTab({ type: "calendar", id: "main" });
+            break;
+          case "keyboard_shortcuts":
+            // Open settings to the agents tab which has keyboard shortcuts
+            openSettings("agents");
+            break;
+          default:
+            break;
+        }
+      });
+    };
+
+    void setupMenuListener();
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, [createNote, openTab, openTodayNote, openExportModal, openSettings, toggleLeftPanel, toggleRightSidebar, toggleChat]);
 
   // Keyboard shortcuts
   useEffect(() => {

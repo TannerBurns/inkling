@@ -275,7 +275,7 @@ Write ONLY the greeting, nothing else:"#,
 
     let raw_content = &response.content;
     let content = raw_content.trim().to_string();
-    log::info!("[Assistant] Raw greeting response (len={}): {:?}", raw_content.len(), &raw_content[..raw_content.len().min(200)]);
+    log::info!("[Assistant] Raw greeting response (len={}): {:?}", raw_content.len(), raw_content.chars().take(200).collect::<String>());
     
     // If the model returned an empty response, return an error so we use fallback
     if content.is_empty() {
@@ -360,7 +360,7 @@ Write ONLY the summary, nothing else:"#,
 
     let raw_content = &response.content;
     let content = raw_content.trim().to_string();
-    log::info!("[Assistant] Raw summary response (len={}): {:?}", raw_content.len(), &raw_content[..raw_content.len().min(200)]);
+    log::info!("[Assistant] Raw summary response (len={}): {:?}", raw_content.len(), raw_content.chars().take(200).collect::<String>());
     
     // If the model returned an empty response, return an error so we use fallback
     if content.is_empty() {
@@ -429,7 +429,7 @@ Examples:
 
     let raw_content = &response.content;
     let content = raw_content.trim().to_string();
-    log::info!("[Assistant] Raw quote response (len={}): {:?}", raw_content.len(), &raw_content[..raw_content.len().min(200)]);
+    log::info!("[Assistant] Raw quote response (len={}): {:?}", raw_content.len(), raw_content.chars().take(200).collect::<String>());
     
     // If the model returned an empty response, return an error so we use fallback
     if content.is_empty() {
@@ -489,7 +489,7 @@ pub async fn generate_assistant_content(
             Ok(quote) => {
                 log::info!(
                     "[Assistant] Got quote from web search: {}",
-                    &quote[..quote.len().min(100)]
+                    quote.chars().take(100).collect::<String>()
                 );
                 Some(quote)
             }
@@ -528,7 +528,7 @@ pub async fn generate_assistant_content(
     // Extract results with fallbacks
     let greeting = match greeting_result {
         Ok(g) => {
-            log::info!("[Assistant] Greeting generated: {}", &g[..g.len().min(50)]);
+            log::info!("[Assistant] Greeting generated: {}", g.chars().take(50).collect::<String>());
             g
         }
         Err(e) => {
@@ -539,7 +539,7 @@ pub async fn generate_assistant_content(
 
     let day_summary = match summary_result {
         Ok(s) => {
-            log::info!("[Assistant] Summary generated: {}", &s[..s.len().min(80)]);
+            log::info!("[Assistant] Summary generated: {}", s.chars().take(80).collect::<String>());
             s
         }
         Err(e) => {
@@ -558,7 +558,7 @@ pub async fn generate_assistant_content(
 
     let (quote, quote_author) = match quote_result {
         Ok((q, a)) => {
-            log::info!("[Assistant] Quote generated: \"{}\" - {}", &q[..q.len().min(50)], a);
+            log::info!("[Assistant] Quote generated: \"{}\" - {}", q.chars().take(50).collect::<String>(), a);
             (q, a)
         }
         Err(e) => {
