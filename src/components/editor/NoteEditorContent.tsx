@@ -548,7 +548,7 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
     }
   }, [contextMenu, selectedNote, queueTask]);
 
-  // Execute research agent
+  // Execute deep research agent
   const handleResearch = useCallback(async () => {
     const editor = editorRef.current;
     if (!editor || !contextMenu || !selectedNote) return;
@@ -561,16 +561,17 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
       ? `Research the content of: ${contextMenu.selectedAttachment!.filename}`
       : contextMenu.selectedText;
     
-    // Queue the research task
+    // Queue the deep research task
     try {
       await queueTask(
         {
           id: executionId,
-          type: "research",
+          type: "deepResearch",
           noteId: selectedNote.id,
           noteTitle: selectedNote.title,
         },
         async () => {
+          // Listen for content streaming
           const unlisten = await agentsApi.listenForAgentContent(executionId, async (event) => {
             if (editor && !editor.isDestroyed) {
               const html = await marked.parse(event.content);
@@ -579,8 +580,13 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
           });
           unlistenContentRef.current = unlisten;
 
+          // Also listen for deep research progress events
+          const unlistenProgress = await agentsApi.listenForDeepResearchProgress(executionId, (progress) => {
+            console.log("[NoteEditorContent] Deep research progress:", progress);
+          });
+
           try {
-            await agentsApi.executeResearchAgent(
+            await agentsApi.executeDeepResearchAgent(
               executionId,
               topic,
               isAttachment ? undefined : contextMenu.selectedText
@@ -590,11 +596,12 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
               unlistenContentRef.current();
               unlistenContentRef.current = null;
             }
+            unlistenProgress();
           }
         }
       );
     } catch (err) {
-      console.error("[NoteEditorContent] Research error:", err);
+      console.error("[NoteEditorContent] Deep research error:", err);
     } finally {
       activeExecutionRef.current = null;
     }

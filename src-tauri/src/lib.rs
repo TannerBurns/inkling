@@ -524,7 +524,7 @@ pub fn run() {
             commands::cancel_agent_execution,
             commands::get_available_tools,
             commands::execute_summarization_agent,
-            commands::execute_research_agent,
+            commands::execute_deep_research_agent,
             commands::extract_attachment_text,
             // Graph commands
             commands::get_graph_data,

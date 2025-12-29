@@ -1,16 +1,17 @@
 //! Tauri commands for AI agents
 //!
 //! Provides commands for executing the inline assistant, summarization agent,
-//! research agent, and managing agent configuration.
+//! deep research agent, and managing agent configuration.
 
 use std::collections::HashMap;
 
 use tauri::{Emitter, State};
 
 use crate::ai::{
-    extract_text_from_attachment, load_ai_config, run_inline_assistant_with_events,
-    run_research_agent, run_summarization_agent, AgentConfig, CancellationToken,
-    InlineAssistantResult, ResearchResult, SummarizationResult,
+    extract_text_from_attachment, load_ai_config, run_deep_research_agent,
+    run_inline_assistant_with_events, run_summarization_agent, AgentConfig,
+    CancellationToken, DeepResearchConfig, DeepResearchResult, InlineAssistantResult,
+    SummarizationResult,
 };
 use crate::db;
 use crate::vault;
@@ -284,26 +285,32 @@ pub async fn execute_summarization_agent(
 }
 
 // ============================================================================
-// Research Agent Commands
+// Deep Research Agent Commands
 // ============================================================================
 
-/// Execute the research agent
+/// Execute the deep research agent
 ///
-/// This command runs the research agent with streaming content output.
+/// This command runs the deep research agent with multi-phase execution:
+/// 1. Planning - Decomposes topic into sub-questions
+/// 2. Research - Iteratively researches each sub-question with reflection
+/// 3. Synthesis - Compiles findings into structured output with citations
+///
 /// The frontend should listen for:
-/// - `agent-progress-{execution_id}` events for progress updates
+/// - `agent-progress-{execution_id}` events for standard progress updates
+/// - `deep-research-progress-{execution_id}` events for deep research specific progress
 /// - `agent-content-{execution_id}` events for content to insert
 #[tauri::command]
-pub async fn execute_research_agent(
+pub async fn execute_deep_research_agent(
     app_handle: tauri::AppHandle,
     pool: State<'_, AppPool>,
     agent_executions: State<'_, AgentExecutions>,
     execution_id: String,
     topic: String,
     context: Option<String>,
-) -> Result<ResearchResult, String> {
+    deep_config: Option<DeepResearchConfig>,
+) -> Result<DeepResearchResult, String> {
     log::info!(
-        "[ResearchAgent] Starting: execution_id={}, topic_len={}, has_context={}",
+        "[DeepResearchAgent] Starting: execution_id={}, topic_len={}, has_context={}",
         execution_id,
         topic.len(),
         context.is_some()
@@ -341,9 +348,19 @@ pub async fn execute_research_agent(
         get_model_and_provider(&ai_config)?
     };
     log::info!(
-        "[ResearchAgent] Using model: {} via provider: {}",
+        "[DeepResearchAgent] Using model: {} via provider: {}",
         model,
         provider.name
+    );
+
+    // Use provided deep config or defaults
+    let deep_config = deep_config.unwrap_or_default();
+    log::info!(
+        "[DeepResearchAgent] Config: max_depth={}, max_sub_questions={}, web_deep_read={}, documents={}",
+        deep_config.max_depth,
+        deep_config.max_sub_questions,
+        deep_config.enable_web_deep_read,
+        deep_config.enable_documents
     );
 
     // Create cancellation token
@@ -355,8 +372,8 @@ pub async fn execute_research_agent(
         executions.insert(execution_id.clone(), cancellation_token.clone());
     }
 
-    // Run the agent
-    let result = run_research_agent(
+    // Run the deep research agent
+    let result = run_deep_research_agent(
         &app_handle,
         &execution_id,
         &db_pool,
@@ -366,6 +383,7 @@ pub async fn execute_research_agent(
         context.as_deref(),
         &vault_path,
         config,
+        deep_config,
         Some(&cancellation_token),
     )
     .await;
@@ -378,11 +396,15 @@ pub async fn execute_research_agent(
 
     match &result {
         Ok(r) => log::info!(
-            "[ResearchAgent] Success! Chunks: {}, Notes searched: {}",
+            "[DeepResearchAgent] Success! Iterations: {}, Chunks: {}, Notes: {}, Web: {}, URLs: {}, Docs: {}",
+            r.iterations,
             r.chunks_appended,
-            r.notes_searched
+            r.notes_searched,
+            r.web_searches,
+            r.urls_fetched,
+            r.documents_read
         ),
-        Err(e) => log::error!("[ResearchAgent] Error: {}", e),
+        Err(e) => log::error!("[DeepResearchAgent] Error: {}", e),
     }
 
     result.map_err(|e| e.to_string())

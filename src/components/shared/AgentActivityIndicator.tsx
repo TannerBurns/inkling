@@ -33,7 +33,7 @@ function getAgentIcon(type: AgentType) {
       return Sparkles;
     case "summarization":
       return FileText;
-    case "research":
+    case "deepResearch":
       return Search;
     case "export":
       return Download;
@@ -58,8 +58,8 @@ function getAgentLabel(type: AgentType) {
       return "AI Assistant";
     case "summarization":
       return "Summarizing";
-    case "research":
-      return "Researching";
+    case "deepResearch":
+      return "Deep Research";
     case "export":
       return "Exporting";
     case "assistant":

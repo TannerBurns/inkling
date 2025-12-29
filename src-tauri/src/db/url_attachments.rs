@@ -429,12 +429,15 @@ pub fn get_url_embedding(
 }
 
 /// Search for similar URLs based on embedding
+/// Searches both legacy single embeddings AND chunked embeddings, returning the best match per URL
 pub fn search_similar_urls(
     conn: &Connection,
     query_embedding: &[f32],
     limit: usize,
     min_similarity: Option<f32>,
 ) -> Result<Vec<UrlSimilarityResult>, UrlAttachmentDbError> {
+    use std::collections::HashMap;
+    
     let query_dimension = query_embedding.len() as i32;
 
     // Serialize query embedding to bytes
@@ -443,61 +446,137 @@ pub fn search_similar_urls(
         .flat_map(|f| f.to_le_bytes())
         .collect();
 
-    let mut stmt = conn.prepare(
-        "SELECT 
-            ue.url_attachment_id,
-            ua.note_id,
-            ua.url,
-            ua.title,
-            vec_distance_cosine(ue.embedding, ?1) as distance
-         FROM url_embeddings ue
-         JOIN url_attachments ua ON ua.id = ue.url_attachment_id
-         WHERE ue.dimension = ?3
-         ORDER BY distance ASC
-         LIMIT ?2",
-    )?;
+    // Map to track best result per URL attachment (keep the one with lowest distance)
+    let mut best_by_url: HashMap<String, UrlSimilarityResult> = HashMap::new();
 
-    let mut results: Vec<UrlSimilarityResult> = Vec::new();
+    // Search legacy single embeddings
+    {
+        let mut stmt = conn.prepare(
+            "SELECT 
+                ue.url_attachment_id,
+                ua.note_id,
+                ua.url,
+                ua.title,
+                vec_distance_cosine(ue.embedding, ?1) as distance
+             FROM url_embeddings ue
+             JOIN url_attachments ua ON ua.id = ue.url_attachment_id
+             WHERE ue.dimension = ?3
+             ORDER BY distance ASC
+             LIMIT ?2",
+        )?;
 
-    let rows = stmt.query_map(params![query_bytes, limit as i64, query_dimension], |row| {
-        let url_attachment_id: String = row.get(0)?;
-        let note_id: String = row.get(1)?;
-        let url: String = row.get(2)?;
-        let title: Option<String> = row.get(3)?;
-        let distance: Option<f64> = row.get(4)?;
-        Ok((url_attachment_id, note_id, url, title, distance))
-    })?;
+        let rows = stmt.query_map(params![&query_bytes, (limit * 2) as i64, query_dimension], |row| {
+            let url_attachment_id: String = row.get(0)?;
+            let note_id: String = row.get(1)?;
+            let url: String = row.get(2)?;
+            let title: Option<String> = row.get(3)?;
+            let distance: Option<f64> = row.get(4)?;
+            Ok((url_attachment_id, note_id, url, title, distance))
+        })?;
 
-    for row_result in rows {
-        match row_result {
-            Ok((url_attachment_id, note_id, url, title, Some(distance))) => {
-                let score = 1.0 - (distance as f32 / 2.0);
+        for row_result in rows {
+            match row_result {
+                Ok((url_attachment_id, note_id, url, title, Some(distance))) => {
+                    let score = 1.0 - (distance as f32 / 2.0);
 
-                // Apply minimum similarity filter
-                if let Some(min) = min_similarity {
-                    if score < min {
-                        continue;
+                    if let Some(min) = min_similarity {
+                        if score < min {
+                            continue;
+                        }
                     }
-                }
 
-                results.push(UrlSimilarityResult {
-                    url_attachment_id,
-                    note_id,
-                    url,
-                    title,
-                    distance: distance as f32,
-                    score,
-                });
-            }
-            Ok((_, _, _, _, None)) => {
-                // NULL distance - dimension mismatch or other issue
-                continue;
-            }
-            Err(e) => {
-                log::warn!("[search_similar_urls] Row error: {}", e);
+                    let result = UrlSimilarityResult {
+                        url_attachment_id: url_attachment_id.clone(),
+                        note_id,
+                        url,
+                        title,
+                        distance: distance as f32,
+                        score,
+                    };
+
+                    // Keep best result per URL attachment
+                    best_by_url.entry(url_attachment_id)
+                        .and_modify(|existing| {
+                            if result.distance < existing.distance {
+                                *existing = result.clone();
+                            }
+                        })
+                        .or_insert(result);
+                }
+                Ok((_, _, _, _, None)) => continue,
+                Err(e) => {
+                    log::warn!("[search_similar_urls] Legacy embedding row error: {}", e);
+                }
             }
         }
     }
+
+    // Search chunk embeddings
+    {
+        let mut stmt = conn.prepare(
+            "SELECT 
+                uec.url_attachment_id,
+                ua.note_id,
+                ua.url,
+                ua.title,
+                vec_distance_cosine(uec.embedding, ?1) as distance
+             FROM url_embedding_chunks uec
+             JOIN url_attachments ua ON ua.id = uec.url_attachment_id
+             WHERE uec.dimension = ?3
+             ORDER BY distance ASC
+             LIMIT ?2",
+        )?;
+
+        let rows = stmt.query_map(params![&query_bytes, (limit * 2) as i64, query_dimension], |row| {
+            let url_attachment_id: String = row.get(0)?;
+            let note_id: String = row.get(1)?;
+            let url: String = row.get(2)?;
+            let title: Option<String> = row.get(3)?;
+            let distance: Option<f64> = row.get(4)?;
+            Ok((url_attachment_id, note_id, url, title, distance))
+        })?;
+
+        for row_result in rows {
+            match row_result {
+                Ok((url_attachment_id, note_id, url, title, Some(distance))) => {
+                    let score = 1.0 - (distance as f32 / 2.0);
+
+                    if let Some(min) = min_similarity {
+                        if score < min {
+                            continue;
+                        }
+                    }
+
+                    let result = UrlSimilarityResult {
+                        url_attachment_id: url_attachment_id.clone(),
+                        note_id,
+                        url,
+                        title,
+                        distance: distance as f32,
+                        score,
+                    };
+
+                    // Keep best result per URL attachment
+                    best_by_url.entry(url_attachment_id)
+                        .and_modify(|existing| {
+                            if result.distance < existing.distance {
+                                *existing = result.clone();
+                            }
+                        })
+                        .or_insert(result);
+                }
+                Ok((_, _, _, _, None)) => continue,
+                Err(e) => {
+                    log::warn!("[search_similar_urls] Chunk embedding row error: {}", e);
+                }
+            }
+        }
+    }
+
+    // Sort by distance and take top results
+    let mut results: Vec<UrlSimilarityResult> = best_by_url.into_values().collect();
+    results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(limit);
 
     Ok(results)
 }
@@ -560,8 +639,202 @@ pub fn delete_url_embedding(
     Ok(rows_affected > 0)
 }
 
-/// Convert bytes back to embedding vector
+// ============================================================================
+// URL Embedding Chunk Operations
+// ============================================================================
+
+/// An embedding chunk for a URL attachment
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UrlEmbeddingChunk {
+    pub id: String,
+    pub url_attachment_id: String,
+    pub chunk_index: i32,
+    pub chunk_text: String,
+    pub char_start: i32,
+    pub char_end: i32,
+    pub dimension: i32,
+    pub model: String,
+}
+
+/// Result of a chunk similarity search
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UrlChunkSimilarityResult {
+    pub url_attachment_id: String,
+    pub chunk_id: String,
+    pub chunk_index: i32,
+    pub chunk_text: String,
+    pub note_id: String,
+    pub url: String,
+    pub title: Option<String>,
+    /// Similarity score (higher is more similar, 0-1 for cosine similarity)
+    pub score: f32,
+    /// Distance (lower is more similar)
+    pub distance: f32,
+}
+
+/// Store embedding chunks for a URL attachment
+/// This replaces any existing chunks for the URL attachment
+pub fn store_url_embedding_chunks(
+    conn: &Connection,
+    url_attachment_id: &str,
+    chunks: &[(String, usize, usize, Vec<f32>)], // (chunk_text, char_start, char_end, embedding)
+    model: &str,
+) -> Result<usize, UrlAttachmentDbError> {
+    // Delete existing chunks for this URL attachment
+    conn.execute(
+        "DELETE FROM url_embedding_chunks WHERE url_attachment_id = ?1",
+        [url_attachment_id],
+    )?;
+
+    let mut stored = 0;
+    for (chunk_index, (chunk_text, char_start, char_end, embedding)) in chunks.iter().enumerate() {
+        let id = Uuid::new_v4().to_string();
+        let embedding_bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+
+        conn.execute(
+            "INSERT INTO url_embedding_chunks 
+             (id, url_attachment_id, chunk_index, chunk_text, char_start, char_end, 
+              embedding, dimension, model, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))",
+            params![
+                id,
+                url_attachment_id,
+                chunk_index as i32,
+                chunk_text,
+                *char_start as i32,
+                *char_end as i32,
+                embedding_bytes,
+                embedding.len() as i32,
+                model
+            ],
+        )?;
+        stored += 1;
+    }
+
+    Ok(stored)
+}
+
+/// Search for similar URL chunks based on embedding
 #[allow(dead_code)]
+pub fn search_similar_url_chunks(
+    conn: &Connection,
+    query_embedding: &[f32],
+    limit: usize,
+    min_similarity: Option<f32>,
+) -> Result<Vec<UrlChunkSimilarityResult>, UrlAttachmentDbError> {
+    let query_dimension = query_embedding.len() as i32;
+
+    // Serialize query embedding to bytes
+    let query_bytes: Vec<u8> = query_embedding
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect();
+
+    let mut stmt = conn.prepare(
+        "SELECT 
+            uec.url_attachment_id,
+            uec.id as chunk_id,
+            uec.chunk_index,
+            uec.chunk_text,
+            ua.note_id,
+            ua.url,
+            ua.title,
+            vec_distance_cosine(uec.embedding, ?1) as distance
+         FROM url_embedding_chunks uec
+         JOIN url_attachments ua ON ua.id = uec.url_attachment_id
+         WHERE uec.dimension = ?3
+         ORDER BY distance ASC
+         LIMIT ?2",
+    )?;
+
+    let mut results: Vec<UrlChunkSimilarityResult> = Vec::new();
+
+    let rows = stmt.query_map(params![query_bytes, limit as i64, query_dimension], |row| {
+        let url_attachment_id: String = row.get(0)?;
+        let chunk_id: String = row.get(1)?;
+        let chunk_index: i32 = row.get(2)?;
+        let chunk_text: String = row.get(3)?;
+        let note_id: String = row.get(4)?;
+        let url: String = row.get(5)?;
+        let title: Option<String> = row.get(6)?;
+        let distance: Option<f64> = row.get(7)?;
+        Ok((url_attachment_id, chunk_id, chunk_index, chunk_text, note_id, url, title, distance))
+    })?;
+
+    for row_result in rows {
+        match row_result {
+            Ok((url_attachment_id, chunk_id, chunk_index, chunk_text, note_id, url, title, Some(distance))) => {
+                let score = 1.0 - (distance as f32 / 2.0);
+
+                // Apply minimum similarity filter
+                if let Some(min) = min_similarity {
+                    if score < min {
+                        continue;
+                    }
+                }
+
+                results.push(UrlChunkSimilarityResult {
+                    url_attachment_id,
+                    chunk_id,
+                    chunk_index,
+                    chunk_text,
+                    note_id,
+                    url,
+                    title,
+                    distance: distance as f32,
+                    score,
+                });
+            }
+            Ok((_, _, _, _, _, _, _, None)) => {
+                // NULL distance - dimension mismatch or other issue
+                continue;
+            }
+            Err(e) => {
+                log::warn!("[search_similar_url_chunks] Row error: {}", e);
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+/// Delete all URL embedding chunks (useful when changing models)
+#[allow(dead_code)]
+pub fn delete_all_url_embedding_chunks(conn: &Connection) -> Result<u32, UrlAttachmentDbError> {
+    let rows_affected = conn.execute("DELETE FROM url_embedding_chunks", [])?;
+    Ok(rows_affected as u32)
+}
+
+/// Delete URL embedding chunks for a specific URL attachment
+#[allow(dead_code)]
+pub fn delete_url_embedding_chunks(
+    conn: &Connection,
+    url_attachment_id: &str,
+) -> Result<bool, UrlAttachmentDbError> {
+    let rows_affected = conn.execute(
+        "DELETE FROM url_embedding_chunks WHERE url_attachment_id = ?1",
+        [url_attachment_id],
+    )?;
+    Ok(rows_affected > 0)
+}
+
+/// Get chunk count for a URL attachment
+#[allow(dead_code)]
+pub fn get_url_embedding_chunk_count(
+    conn: &Connection,
+    url_attachment_id: &str,
+) -> Result<u32, UrlAttachmentDbError> {
+    let count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM url_embedding_chunks WHERE url_attachment_id = ?1",
+        [url_attachment_id],
+        |row| row.get(0),
+    )?;
+    Ok(count as u32)
+}
+
+/// Convert bytes back to embedding vector
 fn bytes_to_embedding(bytes: &[u8]) -> Result<Vec<f32>, UrlAttachmentDbError> {
     if bytes.len() % 4 != 0 {
         return Err(UrlAttachmentDbError::InvalidData);

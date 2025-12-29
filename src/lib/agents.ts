@@ -8,8 +8,10 @@ import type {
   AgentConfig,
   AgentProgress,
   AppendContentEvent,
+  DeepResearchConfig,
+  DeepResearchProgress,
+  DeepResearchResult,
   InlineAssistantResult,
-  ResearchResult,
   SummarizationResult,
   ToolInfo,
 } from "../types/agent";
@@ -105,20 +107,44 @@ export async function executeSummarizationAgent(
 }
 
 /**
- * Execute the research agent
+ * Execute the deep research agent
+ * 
+ * This agent performs multi-phase research:
+ * 1. Planning - Decomposes topic into sub-questions
+ * 2. Research - Iteratively researches each sub-question with reflection
+ * 3. Synthesis - Compiles findings into structured output with citations
+ * 
  * @param executionId - Unique ID for event correlation
  * @param topic - The research topic or question
  * @param context - Optional additional context
+ * @param deepConfig - Optional configuration for deep research behavior
  */
-export async function executeResearchAgent(
+export async function executeDeepResearchAgent(
   executionId: string,
   topic: string,
-  context?: string
-): Promise<ResearchResult> {
-  return invoke<ResearchResult>("execute_research_agent", {
+  context?: string,
+  deepConfig?: DeepResearchConfig
+): Promise<DeepResearchResult> {
+  return invoke<DeepResearchResult>("execute_deep_research_agent", {
     executionId,
     topic,
     context,
+    deepConfig,
+  });
+}
+
+/**
+ * Listen for deep research progress events
+ * @param executionId - The execution ID to listen for
+ * @param callback - Callback function for deep research progress events
+ * @returns Unlisten function
+ */
+export async function listenForDeepResearchProgress(
+  executionId: string,
+  callback: (progress: DeepResearchProgress) => void
+): Promise<UnlistenFn> {
+  return listen<DeepResearchProgress>(`deep-research-progress-${executionId}`, (event) => {
+    callback(event.payload);
   });
 }
 
