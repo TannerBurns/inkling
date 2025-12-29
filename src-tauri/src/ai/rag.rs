@@ -479,7 +479,10 @@ mod tests {
         };
         
         let prompt = format_system_prompt("Base prompt", &context);
-        assert_eq!(prompt, "Base prompt");
+        // Should contain base prompt and current date, but no context section
+        assert!(prompt.starts_with("Base prompt"));
+        assert!(prompt.contains("**Current Date:**"));
+        assert!(!prompt.contains("## Context from User's Notes"));
     }
     
     #[test]
