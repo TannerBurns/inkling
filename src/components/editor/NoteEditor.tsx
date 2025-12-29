@@ -572,7 +572,7 @@ export function NoteEditor() {
     }
   }, [contextMenu, selectedNote, queueTask]);
 
-  // Execute research agent
+  // Execute deep research agent
   const handleResearch = useCallback(async () => {
     const editor = editorRef.current;
     if (!editor || !contextMenu || !selectedNote) return;
@@ -586,12 +586,12 @@ export function NoteEditor() {
       ? `Research the content of: ${contextMenu.selectedAttachment!.filename}`
       : contextMenu.selectedText;
     
-    // Queue the research task
+    // Queue the deep research task
     try {
       await queueTask(
         {
           id: executionId,
-          type: "research",
+          type: "deepResearch",
           noteId: selectedNote.id,
           noteTitle: selectedNote.title,
         },
@@ -606,9 +606,14 @@ export function NoteEditor() {
           });
           unlistenContentRef.current = unlisten;
 
+          // Also listen for deep research progress events
+          const unlistenProgress = await agentsApi.listenForDeepResearchProgress(executionId, (progress) => {
+            console.log("[NoteEditor] Deep research progress:", progress);
+          });
+
           try {
-            // Execute the agent
-            await agentsApi.executeResearchAgent(
+            // Execute the deep research agent
+            await agentsApi.executeDeepResearchAgent(
               executionId,
               topic,
               isAttachment ? undefined : contextMenu.selectedText
@@ -618,11 +623,12 @@ export function NoteEditor() {
               unlistenContentRef.current();
               unlistenContentRef.current = null;
             }
+            unlistenProgress();
           }
         }
       );
     } catch (err) {
-      console.error("[NoteEditor] Research error:", err);
+      console.error("[NoteEditor] Deep research error:", err);
     } finally {
       activeExecutionRef.current = null;
     }

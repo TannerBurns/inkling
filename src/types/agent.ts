@@ -115,14 +115,39 @@ export interface SummarizationResult {
   chunksAppended: number;
 }
 
-/** Result of the research agent */
-export interface ResearchResult {
+/** Configuration for deep research behavior */
+export interface DeepResearchConfig {
+  /** Maximum research depth (iterations per sub-question) */
+  maxDepth?: number;
+  /** Maximum number of sub-questions to generate */
+  maxSubQuestions?: number;
+  /** Whether to fetch full URL content */
+  enableWebDeepRead?: boolean;
+  /** Whether to enable document parsing */
+  enableDocuments?: boolean;
+}
+
+/** Result of the deep research agent */
+export interface DeepResearchResult {
   finalResponse: string;
   toolsUsed: string[];
   iterations: number;
   chunksAppended: number;
   notesSearched: number;
+  webSearches: number;
+  urlsFetched: number;
+  documentsRead: number;
+  subQuestions: string[];
 }
+
+/** Progress events specific to deep research */
+export type DeepResearchProgress =
+  | { type: "planning" }
+  | { type: "planningComplete"; subQuestions: string[] }
+  | { type: "researching"; currentQuestion: string; questionIndex: number; totalQuestions: number }
+  | { type: "reflecting"; gapsFound: boolean }
+  | { type: "synthesizing" }
+  | { type: "completed"; sourcesCount: number };
 
 /** Content event from agent streaming */
 export interface AppendContentEvent {
@@ -131,7 +156,7 @@ export interface AppendContentEvent {
 }
 
 /** Agent type for tracking running agents */
-export type AgentType = "tagging" | "inline" | "embedding" | "summarization" | "research";
+export type AgentType = "tagging" | "inline" | "embedding" | "summarization" | "deepResearch";
 
 /** Default RWPermission - full read/write access */
 export const DEFAULT_RW_PERMISSION: RWPermission = {

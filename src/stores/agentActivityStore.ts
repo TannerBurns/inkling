@@ -6,7 +6,7 @@ export type AgentType =
   | "inline"
   | "embedding"
   | "summarization"
-  | "research"
+  | "deepResearch"
   | "export"
   | "url_indexing"
   | "assistant"

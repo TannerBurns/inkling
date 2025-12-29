@@ -34,6 +34,7 @@ pub fn run_migrations(conn: &Connection) -> Result<(), MigrationError> {
         ("012_exports", MIGRATION_012_EXPORTS),
         ("013_url_attachments", MIGRATION_013_URL_ATTACHMENTS),
         ("014_url_metadata", MIGRATION_014_URL_METADATA),
+        ("015_url_embedding_chunks", MIGRATION_015_URL_EMBEDDING_CHUNKS),
     ];
 
     for (name, sql) in migrations {
@@ -335,6 +336,28 @@ const MIGRATION_014_URL_METADATA: &str = r#"
 ALTER TABLE url_attachments ADD COLUMN image_url TEXT DEFAULT NULL;
 ALTER TABLE url_attachments ADD COLUMN favicon_url TEXT DEFAULT NULL;
 ALTER TABLE url_attachments ADD COLUMN site_name TEXT DEFAULT NULL;
+"#;
+
+const MIGRATION_015_URL_EMBEDDING_CHUNKS: &str = r#"
+-- URL embedding chunks for long content
+-- Instead of one embedding per URL, we split long content into chunks
+-- Each chunk gets its own embedding for better semantic search coverage
+CREATE TABLE url_embedding_chunks (
+    id TEXT PRIMARY KEY,
+    url_attachment_id TEXT NOT NULL REFERENCES url_attachments(id) ON DELETE CASCADE,
+    chunk_index INTEGER NOT NULL,           -- 0-based index of chunk
+    chunk_text TEXT NOT NULL,               -- The actual text that was embedded
+    char_start INTEGER NOT NULL,            -- Start position in original content
+    char_end INTEGER NOT NULL,              -- End position in original content
+    embedding BLOB NOT NULL,
+    dimension INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(url_attachment_id, chunk_index)
+);
+
+-- Index for efficient chunk lookups
+CREATE INDEX idx_url_embedding_chunks_url_id ON url_embedding_chunks(url_attachment_id);
 "#;
 
 #[cfg(test)]

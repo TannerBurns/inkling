@@ -522,59 +522,105 @@ pub async fn reindex_embeddings(
         }
     }
     
-    // Embed URL attachments
+    // Embed URL attachments with chunking for long content
     for url_attachment in indexed_urls {
         let content = match url_attachment.content {
             Some(c) => c,
             None => continue,
         };
         
-        // Build text to embed: title + description + content
-        let mut parts = Vec::new();
+        // Build header text: title + description
+        let mut header_parts = Vec::new();
         if let Some(ref title) = url_attachment.title {
-            parts.push(title.clone());
+            header_parts.push(title.clone());
         }
         if let Some(ref desc) = url_attachment.description {
-            parts.push(desc.clone());
+            header_parts.push(desc.clone());
         }
-        // Truncate content for embedding (max 8000 chars)
-        let truncated_content = if content.len() > 8000 {
-            content[..8000].to_string()
+        let header_text = header_parts.join("\n\n");
+        
+        // Check if we need chunking based on content length
+        let total_len = header_text.len() + content.len();
+        const MIN_CHUNK_THRESHOLD: usize = 7000;
+        const CHUNK_SIZE: usize = 6000;
+        const CHUNK_OVERLAP: usize = 500;
+        
+        if total_len <= MIN_CHUNK_THRESHOLD {
+            // Short content: use single embedding
+            let text_to_embed = if header_text.is_empty() {
+                content.clone()
+            } else {
+                format!("{}\n\n{}", header_text, content)
+            };
+            
+            if text_to_embed.trim().is_empty() {
+                continue;
+            }
+            
+            match generate_embedding_direct(&text_to_embed, &embedding_model, provider_url.as_deref(), api_key.as_deref()).await {
+                Ok(result) => {
+                    let conn = pool_clone.get().map_err(|e| format!("Database error: {}", e))?;
+                    if let Err(e) = url_attachments::store_url_embedding(
+                        &conn,
+                        &url_attachment.id,
+                        &result.embedding,
+                        &embedding_model,
+                    ) {
+                        let err_msg = format!("Failed to store URL embedding: {}", e);
+                        log::warn!("{}", err_msg);
+                        if errors.len() < 5 {
+                            errors.push(err_msg);
+                        }
+                    } else {
+                        url_embedded_count += 1;
+                    }
+                }
+                Err(e) => {
+                    let err_msg = format!("URL embedding failed for {}: {}", url_attachment.url, e);
+                    log::warn!("{}", err_msg);
+                    if errors.len() < 5 {
+                        errors.push(err_msg);
+                    }
+                }
+            }
         } else {
-            content
-        };
-        parts.push(truncated_content);
-        
-        let text_to_embed = parts.join("\n\n");
-        
-        if text_to_embed.trim().is_empty() {
-            continue;
-        }
-        
-        // Generate embedding
-        match generate_embedding_direct(&text_to_embed, &embedding_model, provider_url.as_deref(), api_key.as_deref()).await {
-            Ok(result) => {
+            // Long content: chunk and embed each chunk
+            let chunks = create_url_content_chunks(&header_text, &content, CHUNK_SIZE, CHUNK_OVERLAP);
+            let mut chunk_embeddings: Vec<(String, usize, usize, Vec<f32>)> = Vec::new();
+            let mut chunk_failed = false;
+            
+            for (chunk_text, char_start, char_end) in &chunks {
+                match generate_embedding_direct(chunk_text, &embedding_model, provider_url.as_deref(), api_key.as_deref()).await {
+                    Ok(result) => {
+                        chunk_embeddings.push((chunk_text.clone(), *char_start, *char_end, result.embedding));
+                    }
+                    Err(e) => {
+                        let err_msg = format!("URL chunk embedding failed for {}: {}", url_attachment.url, e);
+                        log::warn!("{}", err_msg);
+                        if errors.len() < 5 {
+                            errors.push(err_msg);
+                        }
+                        chunk_failed = true;
+                        break;
+                    }
+                }
+            }
+            
+            if !chunk_failed && !chunk_embeddings.is_empty() {
                 let conn = pool_clone.get().map_err(|e| format!("Database error: {}", e))?;
-                if let Err(e) = url_attachments::store_url_embedding(
+                if let Err(e) = url_attachments::store_url_embedding_chunks(
                     &conn,
                     &url_attachment.id,
-                    &result.embedding,
+                    &chunk_embeddings,
                     &embedding_model,
                 ) {
-                    let err_msg = format!("Failed to store URL embedding: {}", e);
+                    let err_msg = format!("Failed to store URL chunk embeddings: {}", e);
                     log::warn!("{}", err_msg);
                     if errors.len() < 5 {
                         errors.push(err_msg);
                     }
                 } else {
                     url_embedded_count += 1;
-                }
-            }
-            Err(e) => {
-                let err_msg = format!("URL embedding failed for {}: {}", url_attachment.url, e);
-                log::warn!("{}", err_msg);
-                if errors.len() < 5 {
-                    errors.push(err_msg);
                 }
             }
         }
@@ -771,4 +817,92 @@ fn truncate_content(content: &str, max_len: usize) -> String {
     } else {
         format!("{}...", truncated)
     }
+}
+
+/// Create content chunks for URL embedding with overlap
+/// Returns Vec of (chunk_text, char_start, char_end)
+fn create_url_content_chunks(
+    header: &str,
+    content: &str,
+    chunk_size: usize,
+    overlap: usize,
+) -> Vec<(String, usize, usize)> {
+    let mut chunks = Vec::new();
+    
+    if content.is_empty() {
+        if !header.is_empty() {
+            chunks.push((header.to_string(), 0, 0));
+        }
+        return chunks;
+    }
+
+    let header_len = header.len();
+    let first_chunk_content_size = chunk_size.saturating_sub(header_len + 4);
+    
+    let mut pos = 0;
+    let content_len = content.len();
+    
+    while pos < content_len {
+        let chunk_content_size = if chunks.is_empty() {
+            first_chunk_content_size
+        } else {
+            chunk_size
+        };
+        
+        let end_pos = (pos + chunk_content_size).min(content_len);
+        
+        // Ensure end_pos is at a valid UTF-8 char boundary
+        let end_pos = find_char_boundary(content, end_pos);
+        
+        // Try to break at a word boundary (whitespace)
+        let actual_end = if end_pos < content_len {
+            let search_start = find_char_boundary(content, end_pos.saturating_sub(100));
+            if let Some(rel_pos) = content[search_start..end_pos].rfind(char::is_whitespace) {
+                search_start + rel_pos + 1
+            } else {
+                end_pos
+            }
+        } else {
+            end_pos
+        };
+        
+        let chunk_content = &content[pos..actual_end];
+        
+        let chunk_text = if chunks.is_empty() && !header.is_empty() {
+            format!("{}\n\n{}", header, chunk_content)
+        } else {
+            chunk_content.to_string()
+        };
+        
+        chunks.push((chunk_text, pos, actual_end));
+        
+        // Move to next chunk with overlap
+        let next_pos = if actual_end >= content_len {
+            content_len
+        } else {
+            find_char_boundary(content, actual_end.saturating_sub(overlap))
+        };
+        
+        // Ensure we make progress
+        if next_pos <= pos {
+            pos = actual_end;
+        } else {
+            pos = next_pos;
+        }
+    }
+    
+    chunks
+}
+
+/// Find the nearest valid UTF-8 character boundary at or before the given byte position
+fn find_char_boundary(s: &str, pos: usize) -> usize {
+    if pos >= s.len() {
+        return s.len();
+    }
+    // Walk backwards to find a valid char boundary
+    let mut p = pos;
+    while p > 0 && !s.is_char_boundary(p) {
+        p -= 1;
+    }
+    p
 }
