@@ -10,3 +10,5 @@ export { ModelSelector } from "./ModelSelector";
 export { NewChatView } from "./NewChatView";
 export { NoteCitation } from "./NoteCitation";
 export { NoteMention, TextWithMentions, parseMentions } from "./NoteMention";
+export { ThinkingBlock } from "./ThinkingBlock";
+export { ToolProgress } from "./ToolProgress";

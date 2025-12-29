@@ -32,6 +32,20 @@ export interface MessageMetadata {
   model: string | null;
   /** Token usage statistics */
   usage: TokenUsage | null;
+  /** Tool calls made during this response */
+  toolCalls?: ToolCallRecord[];
+  /** Thinking/reasoning content from the AI */
+  thinkingContent?: string | null;
+}
+
+/** A record of a tool call made during message generation */
+export interface ToolCallRecord {
+  /** Name of the tool that was called */
+  tool: string;
+  /** Whether the tool call succeeded */
+  success: boolean;
+  /** Optional preview/summary of the result */
+  preview?: string;
 }
 
 /** A citation to a note in an AI response */
@@ -56,6 +70,14 @@ export interface ContextItem {
   /** Selected content if not the whole note */
   contentSnippet?: string;
   isFullNote: boolean;
+}
+
+/** Folder context item for chat requests (includes all notes in folder) */
+export interface FolderContextItem {
+  folderId: string;
+  folderName: string;
+  /** Number of notes in this folder (for display) */
+  noteCount: number;
 }
 
 /** Input for sending a chat message */
@@ -112,6 +134,9 @@ export interface ConversationPreview {
 /** Stream event types for chat responses */
 export type ChatStreamEvent =
   | { type: "chunk"; content: string }
+  | { type: "thinking"; content: string }
+  | { type: "tool_start"; tool: string; args: Record<string, unknown> }
+  | { type: "tool_result"; tool: string; success: boolean; preview?: string }
   | { type: "complete"; message: Message }
   | { type: "error"; message: string };
 
@@ -120,6 +145,20 @@ export function isStreamChunk(
   event: ChatStreamEvent
 ): event is { type: "chunk"; content: string } {
   return event.type === "chunk";
+}
+
+/** Check if a stream event is a tool start event */
+export function isStreamToolStart(
+  event: ChatStreamEvent
+): event is { type: "tool_start"; tool: string; args: Record<string, unknown> } {
+  return event.type === "tool_start";
+}
+
+/** Check if a stream event is a tool result event */
+export function isStreamToolResult(
+  event: ChatStreamEvent
+): event is { type: "tool_result"; tool: string; success: boolean; preview?: string } {
+  return event.type === "tool_result";
 }
 
 /** Check if a stream event is complete */
@@ -151,5 +190,18 @@ export function createNoteContext(
     noteTitle,
     isFullNote,
     contentSnippet,
+  };
+}
+
+/** Create a context item for a folder */
+export function createFolderContext(
+  folderId: string,
+  folderName: string,
+  noteCount: number
+): FolderContextItem {
+  return {
+    folderId,
+    folderName,
+    noteCount,
   };
 }

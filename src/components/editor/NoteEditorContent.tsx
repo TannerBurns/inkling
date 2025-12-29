@@ -13,20 +13,21 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import { common, createLowlight } from "lowlight";
-import { Paperclip } from "lucide-react";
+import { Paperclip, Tag, Sparkles, Loader2 } from "lucide-react";
 import { marked } from "marked";
 import { useNoteStore } from "../../stores/noteStore";
 import { useAgentActivityStore } from "../../stores/agentActivityStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useEditorGroupStore } from "../../stores/editorGroupStore";
 import * as api from "../../lib/tauri";
-import { WikiLink } from "./extensions/WikiLink";
-import { Video } from "./extensions/Video";
-import { Audio } from "./extensions/Audio";
-import { FileBlock } from "./extensions/FileBlock";
-import { AIBlock } from "./extensions/AIBlock";
-import { SlashCommand } from "./extensions/SlashCommand";
-import { MermaidBlock } from "./extensions/MermaidBlock";
+import { wikiLink } from "./extensions/WikiLink";
+import { video } from "./extensions/Video";
+import { audio } from "./extensions/Audio";
+import { fileBlock } from "./extensions/FileBlock";
+import { aiBlock } from "./extensions/AIBlock";
+import { slashCommand } from "./extensions/SlashCommand";
+import { mermaidBlock } from "./extensions/MermaidBlock";
+import { urlEmbed } from "./extensions/UrlEmbed";
 import { EditorContextMenu } from "./EditorContextMenu";
 import { EditorToolbar } from "./EditorToolbar";
 import { EditorBubbleMenu } from "./EditorBubbleMenu";
@@ -44,6 +45,78 @@ marked.setOptions({
 
 // Create lowlight instance with common languages
 const lowlight = createLowlight(common);
+
+// URL regex pattern for detecting standalone URLs
+const URL_PATTERN = /^https?:\/\/[^\s]+$/;
+
+/**
+ * Scan the editor content for standalone URLs that should be converted to embeds.
+ * This handles cases where URLs in saved content aren't being rendered as preview blocks.
+ */
+function convertStandaloneUrlsToEmbeds(editor: Editor): void {
+  const { doc } = editor.state;
+  const nodesToReplace: Array<{ from: number; to: number; url: string }> = [];
+
+  doc.descendants((node, pos) => {
+    // Skip if this is already a urlEmbed node
+    if (node.type.name === "urlEmbed") {
+      return false;
+    }
+
+    // Check paragraph nodes for standalone URLs
+    if (node.type.name === "paragraph" && node.childCount === 1) {
+      const child = node.firstChild;
+      
+      // Case 1: Paragraph contains only a text node that is a URL
+      if (child && child.type.name === "text" && child.text) {
+        const text = child.text.trim();
+        if (URL_PATTERN.test(text)) {
+          nodesToReplace.push({
+            from: pos,
+            to: pos + node.nodeSize,
+            url: text,
+          });
+          return false;
+        }
+      }
+      
+      // Case 2: Paragraph contains only a link with a URL
+      if (child && child.type.name === "text" && child.marks.length > 0) {
+        const linkMark = child.marks.find(m => m.type.name === "link");
+        if (linkMark && child.text) {
+          const href = linkMark.attrs.href as string;
+          const text = child.text.trim();
+          // If the link text matches the URL or is a standalone URL
+          if (URL_PATTERN.test(text) || text === href) {
+            nodesToReplace.push({
+              from: pos,
+              to: pos + node.nodeSize,
+              url: href || text,
+            });
+            return false;
+          }
+        }
+      }
+    }
+
+    return true;
+  });
+
+  // Replace nodes in reverse order to maintain positions
+  if (nodesToReplace.length > 0) {
+    const tr = editor.state.tr;
+    for (let i = nodesToReplace.length - 1; i >= 0; i--) {
+      const { from, to, url } = nodesToReplace[i];
+      const urlEmbedNode = editor.state.schema.nodes.urlEmbed.create({
+        url,
+        status: "loading",
+      });
+      tr.replaceWith(from, to, urlEmbedNode);
+    }
+    editor.view.dispatch(tr);
+    console.log(`[NoteEditorContent] Converted ${nodesToReplace.length} standalone URL(s) to embed(s)`);
+  }
+}
 
 // Insert file based on its category
 function insertFileByCategory(
@@ -89,9 +162,10 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
   const notes = useNoteStore((state) => state.notes);
   const updateNote = useNoteStore((state) => state.updateNote);
   const openTab = useEditorGroupStore((state) => state.openTab);
-  const { startAgent, stopAgent } = useAgentActivityStore();
-  const { isEditorToolbarVisible } = useSettingsStore();
+  const { queueTask } = useAgentActivityStore();
+  const { isEditorToolbarVisible, agentSettings } = useSettingsStore();
   const [title, setTitle] = useState("");
+  const [isTagging, setIsTagging] = useState(false);
   const lastSyncedHtmlRef = useRef<string>("");
 
   // Find the current note from store
@@ -250,13 +324,14 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
         HTMLAttributes: { class: "editor-link" },
       }),
       Typography,
-      WikiLink,
-      Video,
-      Audio,
-      FileBlock,
-      AIBlock,
-      SlashCommand,
-      MermaidBlock,
+      wikiLink,
+      video,
+      audio,
+      fileBlock,
+      aiBlock,
+      slashCommand,
+      mermaidBlock,
+      urlEmbed,
       Table.configure({
         resizable: true,
         HTMLAttributes: { class: "editor-table" },
@@ -291,12 +366,24 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
           }
         }
 
-        // Check for markdown table in pasted text
+        // Check for text paste
         const text = event.clipboardData?.getData("text/plain");
         if (text) {
+          const trimmedText = text.trim();
+          
+          // Check for standalone URL paste - auto-convert to embed
+          if (URL_PATTERN.test(trimmedText)) {
+            event.preventDefault();
+            const currentEditor = editorRef.current;
+            if (currentEditor) {
+              currentEditor.chain().focus().insertUrlEmbed(trimmedText).run();
+            }
+            return true;
+          }
+          
           // Detect markdown table pattern: lines starting with | and containing |
           // Filter out empty lines to handle tables with blank lines between rows
-          const lines = text.trim().split("\n").filter(line => line.trim().length > 0);
+          const lines = trimmedText.split("\n").filter(line => line.trim().length > 0);
           const isMarkdownTable = lines.length >= 2 && 
             lines.every(line => line.trim().startsWith("|") && line.trim().endsWith("|")) &&
             lines.some(line => /^\|[\s\-:]+\|/.test(line.trim())); // Has separator row
@@ -421,39 +508,45 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
       : contextMenu.selectedText;
     const contentType = isAttachment ? "attachment" : "selection";
 
-    startAgent({
-      id: executionId,
-      type: "summarization",
-      noteId: selectedNote.id,
-      noteTitle: selectedNote.title,
-    });
-
+    // Queue the summarization task
     try {
-      const unlisten = await agentsApi.listenForAgentContent(executionId, async (event) => {
-        if (editor && !editor.isDestroyed) {
-          const html = await marked.parse(event.content);
-          editor.chain().focus().insertContent(html).run();
-        }
-      });
-      unlistenContentRef.current = unlisten;
+      await queueTask(
+        {
+          id: executionId,
+          type: "summarization",
+          noteId: selectedNote.id,
+          noteTitle: selectedNote.title,
+        },
+        async () => {
+          const unlisten = await agentsApi.listenForAgentContent(executionId, async (event) => {
+            if (editor && !editor.isDestroyed) {
+              const html = await marked.parse(event.content);
+              editor.chain().focus().insertContent(html).run();
+            }
+          });
+          unlistenContentRef.current = unlisten;
 
-      await agentsApi.executeSummarizationAgent(
-        executionId,
-        content,
-        contentType,
-        isAttachment ? contextMenu.selectedAttachment?.src : undefined
+          try {
+            await agentsApi.executeSummarizationAgent(
+              executionId,
+              content,
+              contentType,
+              isAttachment ? contextMenu.selectedAttachment?.src : undefined
+            );
+          } finally {
+            if (unlistenContentRef.current) {
+              unlistenContentRef.current();
+              unlistenContentRef.current = null;
+            }
+          }
+        }
       );
     } catch (err) {
       console.error("[NoteEditorContent] Summarization error:", err);
     } finally {
-      stopAgent(executionId);
       activeExecutionRef.current = null;
-      if (unlistenContentRef.current) {
-        unlistenContentRef.current();
-        unlistenContentRef.current = null;
-      }
     }
-  }, [contextMenu, selectedNote, startAgent, stopAgent]);
+  }, [contextMenu, selectedNote, queueTask]);
 
   // Execute research agent
   const handleResearch = useCallback(async () => {
@@ -468,57 +561,87 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
       ? `Research the content of: ${contextMenu.selectedAttachment!.filename}`
       : contextMenu.selectedText;
     
-    startAgent({
-      id: executionId,
-      type: "research",
-      noteId: selectedNote.id,
-      noteTitle: selectedNote.title,
-    });
-
+    // Queue the research task
     try {
-      const unlisten = await agentsApi.listenForAgentContent(executionId, async (event) => {
-        if (editor && !editor.isDestroyed) {
-          const html = await marked.parse(event.content);
-          editor.chain().focus().insertContent(html).run();
-        }
-      });
-      unlistenContentRef.current = unlisten;
+      await queueTask(
+        {
+          id: executionId,
+          type: "research",
+          noteId: selectedNote.id,
+          noteTitle: selectedNote.title,
+        },
+        async () => {
+          const unlisten = await agentsApi.listenForAgentContent(executionId, async (event) => {
+            if (editor && !editor.isDestroyed) {
+              const html = await marked.parse(event.content);
+              editor.chain().focus().insertContent(html).run();
+            }
+          });
+          unlistenContentRef.current = unlisten;
 
-      await agentsApi.executeResearchAgent(
-        executionId,
-        topic,
-        isAttachment ? undefined : contextMenu.selectedText
+          try {
+            await agentsApi.executeResearchAgent(
+              executionId,
+              topic,
+              isAttachment ? undefined : contextMenu.selectedText
+            );
+          } finally {
+            if (unlistenContentRef.current) {
+              unlistenContentRef.current();
+              unlistenContentRef.current = null;
+            }
+          }
+        }
       );
     } catch (err) {
       console.error("[NoteEditorContent] Research error:", err);
     } finally {
-      stopAgent(executionId);
       activeExecutionRef.current = null;
-      if (unlistenContentRef.current) {
-        unlistenContentRef.current();
-        unlistenContentRef.current = null;
-      }
     }
-  }, [contextMenu, selectedNote, startAgent, stopAgent]);
+  }, [contextMenu, selectedNote, queueTask]);
 
-  // Update editor content when selected note changes
+  // Update editor content when selected note changes or when content is updated externally
+  // We watch updatedAt to detect external changes (e.g., from chat agent) without triggering on every keystroke
   useEffect(() => {
-    if (selectedNote) {
-      setTitle(selectedNote.title);
-      if (editor) {
-        const newContent = selectedNote.contentHtml || selectedNote.content || "";
-        if (editor.getHTML() !== newContent) {
-          editor.commands.setContent(newContent);
-          lastSyncedHtmlRef.current = newContent;
+    const updateEditorContent = async () => {
+      if (selectedNote) {
+        setTitle(selectedNote.title);
+        if (editor) {
+          // If contentHtml is empty but content has markdown, convert it
+          let newContent: string;
+          if (!selectedNote.contentHtml && selectedNote.content) {
+            // Convert markdown to HTML for the editor
+            newContent = await marked.parse(selectedNote.content);
+            console.log("[NoteEditorContent] Converted markdown to HTML for display");
+          } else {
+            newContent = selectedNote.contentHtml || selectedNote.content || "";
+          }
+          
+          // Only update if content is actually different (avoids cursor jump)
+          if (editor.getHTML() !== newContent) {
+            console.log("[NoteEditorContent] Updating editor content from store (updatedAt changed)");
+            editor.commands.setContent(newContent);
+            lastSyncedHtmlRef.current = newContent;
+            
+            // After loading content, check for standalone URLs that should be embeds
+            // Use setTimeout to ensure the content is fully set before scanning
+            setTimeout(() => {
+              if (editor && !editor.isDestroyed) {
+                convertStandaloneUrlsToEmbeds(editor);
+              }
+            }, 100);
+          }
         }
+      } else {
+        setTitle("");
+        editor?.commands.setContent("");
+        lastSyncedHtmlRef.current = "";
       }
-    } else {
-      setTitle("");
-      editor?.commands.setContent("");
-      lastSyncedHtmlRef.current = "";
-    }
+    };
+    
+    updateEditorContent();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNote?.id, editor]);
+  }, [selectedNote?.id, selectedNote?.updatedAt, editor]);
 
   // Attach click and context menu handlers
   useEffect(() => {
@@ -562,6 +685,21 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
   const handleTitleBlur = () => {
     if (selectedNote && title !== selectedNote.title) {
       updateNote(noteId, { title });
+    }
+  };
+
+  // Handle AI tagging
+  const handleTagWithAI = async () => {
+    if (!selectedNote || isTagging) return;
+    
+    setIsTagging(true);
+    try {
+      await api.runTaggingAgent(selectedNote.id);
+      // The NoteTags component will automatically refresh when tags are updated
+    } catch (err) {
+      console.error("[NoteEditorContent] AI tagging error:", err);
+    } finally {
+      setIsTagging(false);
     }
   };
 
@@ -640,6 +778,38 @@ export function NoteEditorContent({ noteId }: NoteEditorContentProps) {
 
         {/* Toolbar */}
         <div className="flex items-center gap-1">
+          {/* Tag with AI Button */}
+          {agentSettings.taggingEnabled && (
+            <button
+              onClick={handleTagWithAI}
+              disabled={isTagging}
+              className="cursor-pointer rounded-lg p-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ color: "var(--color-text-secondary)" }}
+              onMouseEnter={(e) => {
+                if (!isTagging) {
+                  e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+                }
+              }}
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor = "transparent")
+              }
+              title="Tag with AI"
+            >
+              {isTagging ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <span className="relative inline-flex">
+                  <Tag size={18} />
+                  <Sparkles 
+                    size={10} 
+                    className="absolute -right-1 -top-1" 
+                    style={{ color: "var(--color-accent)" }}
+                  />
+                </span>
+              )}
+            </button>
+          )}
+          
           <button
             onClick={handleFileUpload}
             className="cursor-pointer rounded-lg p-2 transition-colors"

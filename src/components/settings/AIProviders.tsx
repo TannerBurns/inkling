@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useAgentActivityStore } from "../../stores/agentActivityStore";
 import type { AIProvider, ProviderTestResult, AIConfig } from "../../types/ai";
 import { isLocalProvider, providerRequiresApiKey } from "../../types/ai";
 import {
@@ -27,6 +28,7 @@ import {
 import * as aiLib from "../../lib/ai";
 import {
   detectEmbeddingDimension,
+  discoverAndIndexUrls,
   getEmbeddingModels,
   getEmbeddingStats,
   reindexEmbeddings,
@@ -1395,6 +1397,7 @@ function EmbeddingStatusBar({ config, onAutoEmbedChange, onModelsLoaded }: Embed
   const [isLoading, setIsLoading] = useState(true);
   const [isReindexing, setIsReindexing] = useState(false);
   const [reindexResult, setReindexResult] = useState<{ message: string; isError: boolean } | null>(null);
+  const { queueTask } = useAgentActivityStore();
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -1419,26 +1422,55 @@ function EmbeddingStatusBar({ config, onAutoEmbedChange, onModelsLoaded }: Embed
   const handleReindex = async () => {
     setIsReindexing(true);
     setReindexResult(null);
+    
+    const agentId = `reindex-${Date.now()}`;
+    
     try {
-      const result = await reindexEmbeddings();
-      
-      if (result.errors.length > 0) {
-        setReindexResult({
-          message: `Embedded ${result.embeddedCount}/${result.totalNotes}. Error: ${result.errors[0]}`,
-          isError: true,
-        });
-      } else if (result.embeddedCount === 0 && result.totalNotes > 0) {
-        setReindexResult({
-          message: "No notes embedded. Enable embeddings for a provider below.",
-          isError: true,
-        });
-      } else {
-        setReindexResult({
-          message: `Successfully embedded ${result.embeddedCount} note${result.embeddedCount !== 1 ? "s" : ""}`,
-          isError: false,
-        });
-      }
-      await loadData();
+      // Queue the reindex operation as a background task
+      await queueTask(
+        {
+          id: agentId,
+          type: "reindex",
+          description: "Discovering URLs and re-indexing embeddings",
+        },
+        async () => {
+          // First, discover and index any URLs in notes that aren't already tracked
+          const discoverResult = await discoverAndIndexUrls();
+          console.log(`[Reindex] Discovered ${discoverResult.discoveredCount} new URLs, ${discoverResult.existingCount} already existed`);
+          
+          // Wait a moment for any newly discovered URLs to be indexed
+          if (discoverResult.discoveredCount > 0) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+          
+          // Now reindex all embeddings
+          const result = await reindexEmbeddings();
+          
+          if (result.errors.length > 0) {
+            setReindexResult({
+              message: `Notes: ${result.embeddedCount}/${result.totalNotes}, URLs: ${result.urlEmbeddedCount}/${result.totalUrls}. Error: ${result.errors[0]}`,
+              isError: true,
+            });
+          } else if (result.embeddedCount === 0 && result.totalNotes > 0) {
+            setReindexResult({
+              message: "No notes embedded. Enable embeddings for a provider below.",
+              isError: true,
+            });
+          } else {
+            const urlPart = result.totalUrls > 0 
+              ? ` and ${result.urlEmbeddedCount} URL${result.urlEmbeddedCount !== 1 ? "s" : ""}`
+              : "";
+            const discoverPart = discoverResult.discoveredCount > 0
+              ? ` (${discoverResult.discoveredCount} new URLs found)`
+              : "";
+            setReindexResult({
+              message: `Successfully embedded ${result.embeddedCount} note${result.embeddedCount !== 1 ? "s" : ""}${urlPart}${discoverPart}`,
+              isError: false,
+            });
+          }
+          await loadData();
+        }
+      );
     } catch (err) {
       console.error("Failed to reindex:", err);
       setReindexResult({ message: `Error: ${String(err)}`, isError: true });

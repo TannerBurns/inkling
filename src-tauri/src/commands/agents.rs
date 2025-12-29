@@ -97,7 +97,7 @@ pub async fn execute_inline_agent(
     // Get the model and provider to use
     let (model, provider) = {
         let conn = db_pool.get().map_err(|e| e.to_string())?;
-        let ai_config = load_ai_config(&conn).map_err(|e| e)?;
+        let ai_config = load_ai_config(&conn)?;
         get_model_and_provider(&ai_config)?
     };
     log::info!("[Agent] Using model: {} via provider: {}", model, provider.name);
@@ -217,7 +217,7 @@ pub async fn execute_summarization_agent(
     // Get the model and provider
     let (model, provider) = {
         let conn = db_pool.get().map_err(|e| e.to_string())?;
-        let ai_config = load_ai_config(&conn).map_err(|e| e)?;
+        let ai_config = load_ai_config(&conn)?;
         get_model_and_provider(&ai_config)?
     };
     log::info!(
@@ -337,7 +337,7 @@ pub async fn execute_research_agent(
     // Get the model and provider
     let (model, provider) = {
         let conn = db_pool.get().map_err(|e| e.to_string())?;
-        let ai_config = load_ai_config(&conn).map_err(|e| e)?;
+        let ai_config = load_ai_config(&conn)?;
         get_model_and_provider(&ai_config)?
     };
     log::info!(
@@ -441,30 +441,9 @@ pub fn get_available_tools(pool: State<AppPool>) -> Result<Vec<ToolInfo>, String
             requires_api_key: true,
         },
         ToolInfo {
-            name: "fetch_image".to_string(),
-            description: "Find images from Unsplash".to_string(),
-            enabled: config.is_tool_enabled("fetch_image"),
-            configured: config.image.is_configured(),
-            requires_api_key: true,
-        },
-        ToolInfo {
-            name: "generate_image".to_string(),
-            description: "Generate images using AI".to_string(),
-            enabled: config.is_tool_enabled("generate_image"),
-            configured: config.image.allow_generation,
-            requires_api_key: false, // Uses configured AI provider
-        },
-        ToolInfo {
             name: "create_mermaid".to_string(),
             description: "Create Mermaid diagrams".to_string(),
             enabled: config.is_tool_enabled("create_mermaid"),
-            configured: true,
-            requires_api_key: false,
-        },
-        ToolInfo {
-            name: "create_excalidraw".to_string(),
-            description: "Create Excalidraw sketches".to_string(),
-            enabled: config.is_tool_enabled("create_excalidraw"),
             configured: true,
             requires_api_key: false,
         },

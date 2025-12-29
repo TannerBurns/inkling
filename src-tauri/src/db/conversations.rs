@@ -208,7 +208,7 @@ pub fn create_message(
 ) -> Result<Message, ConversationDbError> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now();
-    let metadata_json = metadata.map(|m| serde_json::to_string(m)).transpose()?;
+    let metadata_json = metadata.map(serde_json::to_string).transpose()?;
 
     conn.execute(
         "INSERT INTO messages (id, conversation_id, role, content, metadata, created_at)
@@ -294,7 +294,29 @@ pub fn get_conversation_messages(
         .filter_map(|(id, conv_id, role_str, content, metadata_json, created_at): (String, String, String, String, Option<String>, String)| {
             let role = MessageRole::from_str(&role_str)?;
             let metadata: Option<MessageMetadata> = metadata_json
-                .and_then(|j| serde_json::from_str(&j).ok());
+                .and_then(|j| {
+                    match serde_json::from_str::<MessageMetadata>(&j) {
+                        Ok(m) => {
+                            // Log if we have tool calls for debugging
+                            if !m.tool_calls.is_empty() {
+                                log::debug!(
+                                    "[DB] Message {} has {} tool calls in metadata",
+                                    id,
+                                    m.tool_calls.len()
+                                );
+                            }
+                            Some(m)
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[DB] Failed to parse message metadata for {}: {}",
+                                id,
+                                e
+                            );
+                            None
+                        }
+                    }
+                });
 
             Some(Message {
                 id,
@@ -335,7 +357,28 @@ pub fn get_conversation_messages_paginated(
         .filter_map(|(id, conv_id, role_str, content, metadata_json, created_at): (String, String, String, String, Option<String>, String)| {
             let role = MessageRole::from_str(&role_str)?;
             let metadata: Option<MessageMetadata> = metadata_json
-                .and_then(|j| serde_json::from_str(&j).ok());
+                .and_then(|j| {
+                    match serde_json::from_str::<MessageMetadata>(&j) {
+                        Ok(m) => {
+                            if !m.tool_calls.is_empty() {
+                                log::debug!(
+                                    "[DB] Message {} has {} tool calls in metadata",
+                                    id,
+                                    m.tool_calls.len()
+                                );
+                            }
+                            Some(m)
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[DB] Failed to parse message metadata for {}: {}",
+                                id,
+                                e
+                            );
+                            None
+                        }
+                    }
+                });
 
             Some(Message {
                 id,

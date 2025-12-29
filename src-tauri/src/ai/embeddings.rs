@@ -86,14 +86,14 @@ pub async fn generate_embedding_direct(
     // Determine URL and model name based on provider prefix
     let (url, model_name) = if let Some(base_url) = provider_url {
         let base = base_url.trim_end_matches('/');
-        let model_name = if model.starts_with("lmstudio/") {
-            &model["lmstudio/".len()..]
-        } else if model.starts_with("ollama/") {
-            &model["ollama/".len()..]
-        } else if model.starts_with("vllm/") {
-            &model["vllm/".len()..]
-        } else if model.starts_with("openai/") {
-            &model["openai/".len()..]
+        let model_name = if let Some(stripped) = model.strip_prefix("lmstudio/") {
+            stripped
+        } else if let Some(stripped) = model.strip_prefix("ollama/") {
+            stripped
+        } else if let Some(stripped) = model.strip_prefix("vllm/") {
+            stripped
+        } else if let Some(stripped) = model.strip_prefix("openai/") {
+            stripped
         } else {
             model
         };
@@ -106,17 +106,13 @@ pub async fn generate_embedding_direct(
         (url, model_name)
     } else {
         // No provider URL - try to extract from model prefix and use default ports
-        if model.starts_with("ollama/") {
-            let model_name = &model["ollama/".len()..];
+        if let Some(model_name) = model.strip_prefix("ollama/") {
             ("http://localhost:11434/v1/embeddings".to_string(), model_name)
-        } else if model.starts_with("lmstudio/") {
-            let model_name = &model["lmstudio/".len()..];
+        } else if let Some(model_name) = model.strip_prefix("lmstudio/") {
             ("http://localhost:1234/v1/embeddings".to_string(), model_name)
-        } else if model.starts_with("vllm/") {
-            let model_name = &model["vllm/".len()..];
+        } else if let Some(model_name) = model.strip_prefix("vllm/") {
             ("http://localhost:8000/v1/embeddings".to_string(), model_name)
-        } else if model.starts_with("openai/") {
-            let model_name = &model["openai/".len()..];
+        } else if let Some(model_name) = model.strip_prefix("openai/") {
             ("https://api.openai.com/v1/embeddings".to_string(), model_name)
         } else {
             return Err(EmbeddingError::ApiError(

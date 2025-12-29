@@ -95,7 +95,7 @@ fn generate_code_challenge(verifier: &str) -> String {
     let digest = hasher.finalize();
     
     // Base64url encode (no padding)
-    URL_SAFE_NO_PAD.encode(&digest)
+    URL_SAFE_NO_PAD.encode(digest)
 }
 
 /// Get the Google Client ID from environment or embedded configuration

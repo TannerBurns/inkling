@@ -25,13 +25,13 @@ pub struct NoteSearchResult {
 pub fn get_search_notes_tool() -> ToolDefinition {
     ToolDefinition::function(
         "search_notes",
-        "Search through the user's notes to find relevant information. Returns matching notes with titles and content snippets.",
+        "Search through the user's notes and their attached documents (PDFs, text files, Word docs, spreadsheets) using semantic search. Returns matching notes with titles and content snippets. This searches the full text content of notes AND any files attached to them.",
         json!({
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The search query - describe what you're looking for"
+                    "description": "The search query - describe what you're looking for in notes and attached documents"
                 },
                 "limit": {
                     "type": "integer",
@@ -73,7 +73,7 @@ pub async fn execute_search_notes(
     // Get embedding model, provider URL, and API key from config
     let (embedding_model, provider_url, api_key) = {
         let conn = pool.get().map_err(|e| e.to_string())?;
-        let config = load_ai_config(&conn).map_err(|e| e)?;
+        let config = load_ai_config(&conn)?;
         let embedding_provider = config.providers.iter()
             .find(|p| p.id == config.embedding.provider);
         let provider_url = embedding_provider.and_then(|p| p.base_url.clone());

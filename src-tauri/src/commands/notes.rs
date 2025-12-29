@@ -97,7 +97,7 @@ pub fn update_note(
     let old_title = old_note.title.clone();
     let old_folder_id = old_note.folder_id.clone();
     
-    let is_title_changing = title.as_ref().map_or(false, |t| t != &old_title);
+    let is_title_changing = title.as_ref().is_some_and(|t| t != &old_title);
     let is_folder_changing = folder_id != old_folder_id;
 
     let input = UpdateNoteInput {

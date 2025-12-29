@@ -78,14 +78,40 @@ impl AnthropicClient {
                     }
                 }
                 MessageRole::Assistant => {
-                    if let Some(ref content) = msg.content {
+                    // Assistant messages can have text content, tool calls, or both
+                    // Anthropic requires these to be sent as content blocks in a single message
+                    let has_content = msg.content.as_ref().map(|c| !c.is_empty()).unwrap_or(false);
+                    let has_tool_calls = msg.tool_calls.as_ref().map(|tc| !tc.is_empty()).unwrap_or(false);
+                    
+                    if has_content && has_tool_calls {
+                        // Both text and tool calls - combine into blocks
+                        let mut blocks = Vec::new();
+                        if let Some(ref content) = msg.content {
+                            blocks.push(AnthropicContentBlock::Text { text: content.clone() });
+                        }
+                        if let Some(ref tool_calls) = msg.tool_calls {
+                            for tc in tool_calls {
+                                blocks.push(AnthropicContentBlock::ToolUse {
+                                    id: tc.id.clone(),
+                                    name: tc.function.name.clone(),
+                                    input: serde_json::from_str(&tc.function.arguments)
+                                        .unwrap_or(Value::Object(serde_json::Map::new())),
+                                });
+                            }
+                        }
                         anthropic_messages.push(AnthropicMessage {
                             role: "assistant".to_string(),
-                            content: AnthropicContent::Text(content.clone()),
+                            content: AnthropicContent::Blocks(blocks),
                         });
-                    } else if let Some(ref tool_calls) = msg.tool_calls {
-                        // Assistant message with tool use
-                        let blocks: Vec<AnthropicContentBlock> = tool_calls
+                    } else if has_content {
+                        // Only text content
+                        anthropic_messages.push(AnthropicMessage {
+                            role: "assistant".to_string(),
+                            content: AnthropicContent::Text(msg.content.clone().unwrap()),
+                        });
+                    } else if has_tool_calls {
+                        // Only tool calls
+                        let blocks: Vec<AnthropicContentBlock> = msg.tool_calls.as_ref().unwrap()
                             .iter()
                             .map(|tc| AnthropicContentBlock::ToolUse {
                                 id: tc.id.clone(),
@@ -307,31 +333,21 @@ impl LlmClient for AnthropicClient {
                                 continue;
                             }
 
-                            if line.starts_with("data: ") {
-                                let data = &line[6..];
+                            if let Some(data) = line.strip_prefix("data: ") {
 
                                 if let Ok(event) = serde_json::from_str::<AnthropicStreamEvent>(data)
                                 {
                                     match event.r#type.as_str() {
                                         "content_block_start" => {
-                                            if let Some(block) = event.content_block {
-                                                match block {
-                                                    AnthropicContentBlock::ToolUse {
+                                            if let Some(AnthropicContentBlock::ToolUse { id, name, .. }) = event.content_block {
+                                                current_tool_id = id.clone();
+                                                _current_tool_name = name.clone();
+                                                let _ = tx
+                                                    .send(StreamEvent::ToolCallStart {
                                                         id,
                                                         name,
-                                                        ..
-                                                    } => {
-                                                        current_tool_id = id.clone();
-                                                        _current_tool_name = name.clone();
-                                                        let _ = tx
-                                                            .send(StreamEvent::ToolCallStart {
-                                                                id,
-                                                                name,
-                                                            })
-                                                            .await;
-                                                    }
-                                                    _ => {}
-                                                }
+                                                    })
+                                                    .await;
                                             }
                                         }
                                         "content_block_delta" => {
@@ -366,19 +382,12 @@ impl LlmClient for AnthropicClient {
                                             }
                                         }
                                         "message_delta" => {
-                                            if let Some(delta) = event.delta {
-                                                if let AnthropicDelta::MessageDelta {
-                                                    stop_reason,
-                                                } = delta
-                                                {
-                                                    if let Some(reason) = stop_reason {
-                                                        let _ = tx
-                                                            .send(StreamEvent::Done {
-                                                                finish_reason: reason,
-                                                            })
-                                                            .await;
-                                                    }
-                                                }
+                                            if let Some(AnthropicDelta::MessageDelta { stop_reason: Some(reason) }) = event.delta {
+                                                let _ = tx
+                                                    .send(StreamEvent::Done {
+                                                        finish_reason: reason,
+                                                    })
+                                                    .await;
                                             }
                                             if let Some(usage) = event.usage {
                                                 let _ = tx
@@ -498,6 +507,7 @@ struct AnthropicStreamEvent {
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
+#[allow(clippy::enum_variant_names)]
 enum AnthropicDelta {
     TextDelta {
         text: String,

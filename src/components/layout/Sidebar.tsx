@@ -16,6 +16,7 @@ import {
   Copy,
   Plus,
   Download,
+  MessageSquarePlus,
 } from "lucide-react";
 import {
   useFolderStore,
@@ -24,6 +25,7 @@ import {
 } from "../../stores/folderStore";
 import { useNoteStore } from "../../stores/noteStore";
 import { useBoardStore } from "../../stores/boardStore";
+import { useChatStore } from "../../stores/chatStore";
 import { useEditorGroupStore, useActiveTab } from "../../stores/editorGroupStore";
 import { useDragStore } from "../../stores/dragStore";
 import { useDailyNotesStore } from "../../stores/dailyNotesStore";
@@ -32,6 +34,7 @@ import type { Note } from "../../types/note";
 import type { Folder } from "../../types/note";
 import type { Board } from "../../types/board";
 import { createNote as createNoteApi } from "../../lib/tauri";
+import { createNoteContext, createFolderContext } from "../../types/chat";
 
 /** System folder names that cannot be deleted or renamed */
 const SYSTEM_FOLDER_NAMES = ["Daily Notes"];
@@ -66,6 +69,7 @@ export function Sidebar() {
   const { isDragging, draggedNoteId, endDrag, startDrag } = useDragStore();
   const { openTodayNote, isLoading: isDailyNoteLoading } = useDailyNotesStore();
   const { openExportModal } = useExportStore();
+  const { addContext, addFolderContext, openChat } = useChatStore();
   const folderTree = useFolderTree();
 
   // Fetch boards on mount
@@ -390,6 +394,22 @@ export function Sidebar() {
   const handleExportNote = (note: Note) => {
     setNoteContextMenu(null);
     openExportModal([note.id]);
+  };
+
+  const handleAddNoteToChat = (note: Note) => {
+    setNoteContextMenu(null);
+    // Add to context and request badge insertion in ChatInput
+    addContext(createNoteContext(note.id, note.title), true);
+    openChat();
+  };
+
+  const handleAddFolderToChat = (folder: Folder) => {
+    setFolderContextMenu(null);
+    // Count notes in this folder for display
+    const noteCount = notes.filter((n) => n.folderId === folder.id && !n.isDeleted).length;
+    // Add to context and request badge insertion in ChatInput
+    addFolderContext(createFolderContext(folder.id, folder.name, noteCount), true);
+    openChat();
   };
 
   const handleRenameNote = async () => {
@@ -745,6 +765,7 @@ export function Sidebar() {
           onNewNote={() => handleCreateNoteInFolder(folderContextMenu.folder.id)}
           onNewFolder={() => handleStartCreateFolderInFolder(folderContextMenu.folder.id)}
           onOpenBoard={() => handleOpenOrCreateBoard(folderContextMenu.folder)}
+          onAddToChat={() => handleAddFolderToChat(folderContextMenu.folder)}
           onRename={() => handleStartRenameFolder(folderContextMenu.folder)}
           onDelete={() => handleDeleteFolder(folderContextMenu.folder)}
         />
@@ -758,6 +779,7 @@ export function Sidebar() {
           onRename={() => handleStartRenameNote(noteContextMenu.note)}
           onDuplicate={() => handleDuplicateNote(noteContextMenu.note)}
           onExport={() => handleExportNote(noteContextMenu.note)}
+          onAddToChat={() => handleAddNoteToChat(noteContextMenu.note)}
           onDelete={() => handleDeleteNote(noteContextMenu.note)}
         />
       )}
@@ -1380,11 +1402,12 @@ interface FolderContextMenuProps {
   onNewNote: () => void;
   onNewFolder: () => void;
   onOpenBoard: () => void;
+  onAddToChat: () => void;
   onRename: () => void;
   onDelete: () => void;
 }
 
-function FolderContextMenu({ x, y, hasBoard, isSystem, onNewNote, onNewFolder, onOpenBoard, onRename, onDelete }: FolderContextMenuProps) {
+function FolderContextMenu({ x, y, hasBoard, isSystem, onNewNote, onNewFolder, onOpenBoard, onAddToChat, onRename, onDelete }: FolderContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Adjust position to keep menu in viewport
@@ -1461,6 +1484,20 @@ function FolderContextMenu({ x, y, hasBoard, isSystem, onNewNote, onNewFolder, o
         <Kanban size={14} />
         {hasBoard ? "Open Board" : "Create Board"}
       </button>
+      <button
+        onClick={onAddToChat}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors"
+        style={{ color: "var(--color-text-primary)" }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = "transparent";
+        }}
+      >
+        <MessageSquarePlus size={14} />
+        Add to Chat
+      </button>
       {!isSystem && (
         <>
           <div 
@@ -1522,10 +1559,11 @@ interface NoteContextMenuProps {
   onRename: () => void;
   onDuplicate: () => void;
   onExport: () => void;
+  onAddToChat: () => void;
   onDelete: () => void;
 }
 
-function NoteContextMenu({ x, y, onRename, onDuplicate, onExport, onDelete }: NoteContextMenuProps) {
+function NoteContextMenu({ x, y, onRename, onDuplicate, onExport, onAddToChat, onDelete }: NoteContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Adjust position to keep menu in viewport
@@ -1597,6 +1635,20 @@ function NoteContextMenu({ x, y, onRename, onDuplicate, onExport, onDelete }: No
       >
         <Download size={14} />
         Export...
+      </button>
+      <button
+        onClick={onAddToChat}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors"
+        style={{ color: "var(--color-text-primary)" }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = "transparent";
+        }}
+      >
+        <MessageSquarePlus size={14} />
+        Add to Chat
       </button>
       <div 
         className="my-1 border-t"

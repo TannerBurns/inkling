@@ -81,12 +81,31 @@ export async function getEmbeddingModels(): Promise<EmbeddingModelInfo[]> {
 export interface ReindexResult {
   embeddedCount: number;
   totalNotes: number;
+  urlEmbeddedCount: number;
+  totalUrls: number;
+  errors: string[];
+}
+
+/** Result of discovering URLs from notes */
+export interface DiscoverUrlsResult {
+  discoveredCount: number;
+  existingCount: number;
+  notesScanned: number;
   errors: string[];
 }
 
 /**
+ * Discover and index all URLs embedded in notes.
+ * Scans all notes for URL embeds and creates URL attachments for any that don't exist.
+ * @returns details about discovered URLs
+ */
+export async function discoverAndIndexUrls(): Promise<DiscoverUrlsResult> {
+  return invoke<DiscoverUrlsResult>("discover_and_index_urls");
+}
+
+/**
  * Trigger re-indexing of all embeddings.
- * Deletes all existing embeddings and re-generates them for all notes.
+ * Deletes all existing embeddings and re-generates them for all notes and URL attachments.
  * @returns details about the reindex operation including any errors
  */
 export async function reindexEmbeddings(): Promise<ReindexResult> {

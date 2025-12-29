@@ -10,6 +10,7 @@ pub mod migrations;
 pub mod notes;
 pub mod settings;
 pub mod tags;
+pub mod url_attachments;
 
 pub use connection::DbPool;
 pub use conversations::*;

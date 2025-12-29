@@ -17,6 +17,7 @@ export function ChatPanel() {
     isStreaming,
     streamingContent,
     attachedContext,
+    attachedFolders,
     fetchConversations,
     openTabIds,
     error,
@@ -165,8 +166,8 @@ export function ChatPanel() {
         </div>
       )}
 
-      {/* Context Panel (shown when context is attached) */}
-      {attachedContext.length > 0 && <ContextPanel />}
+      {/* Context Panel (shown when context is attached - notes or folders) */}
+      {(attachedContext.length > 0 || attachedFolders.length > 0) && <ContextPanel />}
 
       {/* Messages or New Chat View */}
       <div 

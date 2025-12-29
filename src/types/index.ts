@@ -63,6 +63,8 @@ export type {
 
 export {
   isStreamChunk,
+  isStreamToolStart,
+  isStreamToolResult,
   isStreamComplete,
   isStreamError,
   createNoteContext,
@@ -71,11 +73,7 @@ export {
 
 export type {
   WebSearchProvider,
-  ImageProvider,
-  DiagramFormat,
   WebSearchConfig,
-  ImageConfig,
-  DiagramConfig,
   AgentConfig,
   ToolInfo,
   AgentProgress,
@@ -133,3 +131,19 @@ export type {
 } from './export';
 
 export { FORMAT_LABELS, FORMAT_EXTENSIONS, FORMAT_ICONS } from './export';
+
+export type {
+  UrlStatus,
+  UrlAttachment,
+  ScrapedLink,
+  UrlIndexingProgress,
+} from './url';
+
+export {
+  parseUrlLinks,
+  getUrlDomain,
+  getUrlDisplayTitle,
+  isUrlIndexed,
+  isUrlProcessing,
+  isUrlError,
+} from './url';

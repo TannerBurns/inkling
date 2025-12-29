@@ -338,8 +338,7 @@ impl LlmClient for GoogleClient {
                                 continue;
                             }
 
-                            if line.starts_with("data: ") {
-                                let data = &line[6..];
+                            if let Some(data) = line.strip_prefix("data: ") {
 
                                 if let Ok(response) = serde_json::from_str::<GeminiResponse>(data) {
                                     for candidate in &response.candidates {

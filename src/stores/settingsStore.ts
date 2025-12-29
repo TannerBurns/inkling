@@ -6,11 +6,11 @@ import * as aiLib from "../lib/ai";
 export type Theme = "system" | "light" | "dark";
 
 /** Settings tab in the modal */
-export type SettingsTab = "appearance" | "ai-providers" | "agents" | "assistant" | "tags" | "daily-notes" | "google" | "data" | "about";
+export type SettingsTab = "appearance" | "ai-providers" | "agents" | "tags" | "daily-notes" | "google" | "data" | "about";
 
 /** Agent settings */
 export interface AgentSettings {
-  /** Enable automatic tagging agent */
+  /** Enable AI tagging feature (shows Tag with AI button) */
   taggingEnabled: boolean;
   /** Show agent activity (tool calls) in UI */
   showAgentActivity: boolean;

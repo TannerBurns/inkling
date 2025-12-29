@@ -680,6 +680,7 @@ pub fn get_system_prompt_for_format(format: &ExportFormat) -> &'static str {
 /// * `format` - Export format (pdf, docx, pptx)
 /// * `custom_instructions` - Optional custom instructions from user
 /// * `cancellation_token` - Optional cancellation token
+#[allow(clippy::too_many_arguments)]
 pub async fn run_export_agent(
     app_handle: &AppHandle,
     execution_id: &str,
@@ -836,10 +837,11 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::len_zero)]
     fn test_system_prompts_exist() {
-        assert!(!PDF_EXPORT_SYSTEM_PROMPT.is_empty());
-        assert!(!DOCX_EXPORT_SYSTEM_PROMPT.is_empty());
-        assert!(!PPTX_EXPORT_SYSTEM_PROMPT.is_empty());
+        assert!(PDF_EXPORT_SYSTEM_PROMPT.len() > 0);
+        assert!(DOCX_EXPORT_SYSTEM_PROMPT.len() > 0);
+        assert!(PPTX_EXPORT_SYSTEM_PROMPT.len() > 0);
     }
 
     #[test]

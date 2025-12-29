@@ -91,7 +91,7 @@ fn row_to_card_with_note(row: &Row) -> Result<BoardCardWithNote, rusqlite::Error
 /// Create a new board with default lanes
 pub fn create_board(conn: &Connection, input: CreateBoardInput) -> Result<Board, BoardDbError> {
     // Check if board already exists for this folder
-    if let Some(_) = get_board_by_folder(conn, &input.folder_id)? {
+    if get_board_by_folder(conn, &input.folder_id)?.is_some() {
         return Err(BoardDbError::BoardAlreadyExists(input.folder_id));
     }
 
@@ -105,7 +105,7 @@ pub fn create_board(conn: &Connection, input: CreateBoardInput) -> Result<Board,
     )?;
 
     // Create default lanes
-    let default_lanes = vec![
+    let default_lanes = [
         ("To Do", "#6b7280"),      // gray
         ("In Progress", "#3b82f6"), // blue
         ("Done", "#22c55e"),        // green

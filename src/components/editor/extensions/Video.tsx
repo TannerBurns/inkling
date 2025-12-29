@@ -27,7 +27,7 @@ declare module "@tiptap/core" {
  * Video extension for TipTap
  * Enables embedding videos with custom playback controls
  */
-export const Video = Node.create<VideoOptions>({
+export const video = Node.create<VideoOptions>({
   name: "video",
 
   group: "block",
@@ -128,4 +128,4 @@ function VideoNodeView({ node }: NodeViewProps) {
   );
 }
 
-export default Video;
+export default video;

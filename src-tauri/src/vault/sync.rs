@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum SyncError {
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
@@ -111,10 +112,12 @@ pub fn sync_file_to_note(pool: &DbPool, file_path: &Path) -> Result<Note, SyncEr
     // Check if note exists by ID
     if let Some(existing) = notes::get_note(&conn, &parsed.frontmatter.id)? {
         // Update existing note
+        // IMPORTANT: Set content_html to empty string to clear stale HTML.
+        // The frontend will regenerate HTML from markdown content when content_html is empty.
         let update = UpdateNoteInput {
             title: Some(parsed.title),
             content: Some(parsed.content),
-            content_html: None,
+            content_html: Some(String::new()), // Clear stale HTML so frontend uses markdown content
             folder_id: parsed.frontmatter.folder_id,
         };
         
@@ -186,7 +189,7 @@ fn collect_markdown_files(dir: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
             
             if path.is_dir() {
                 files.extend(collect_markdown_files(&path)?);
-            } else if path.extension().map_or(false, |ext| ext == "md") {
+            } else if path.extension().is_some_and(|ext| ext == "md") {
                 files.push(path);
             }
         }

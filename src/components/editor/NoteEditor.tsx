@@ -13,19 +13,20 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import { common, createLowlight } from "lowlight";
-import { FileText, Paperclip } from "lucide-react";
+import { FileText, Paperclip, Tag, Sparkles, Loader2 } from "lucide-react";
 import { marked } from "marked";
 import { useNoteStore, useSelectedNote } from "../../stores/noteStore";
 import { useBoardStore } from "../../stores/boardStore";
 import { useAgentActivityStore } from "../../stores/agentActivityStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { WikiLink } from "./extensions/WikiLink";
-import { Video } from "./extensions/Video";
-import { Audio } from "./extensions/Audio";
-import { FileBlock } from "./extensions/FileBlock";
-import { AIBlock } from "./extensions/AIBlock";
-import { SlashCommand } from "./extensions/SlashCommand";
-import { MermaidBlock } from "./extensions/MermaidBlock";
+import { wikiLink } from "./extensions/WikiLink";
+import { video } from "./extensions/Video";
+import { audio } from "./extensions/Audio";
+import { fileBlock } from "./extensions/FileBlock";
+import { aiBlock } from "./extensions/AIBlock";
+import { slashCommand } from "./extensions/SlashCommand";
+import { mermaidBlock } from "./extensions/MermaidBlock";
+import { urlEmbed } from "./extensions/UrlEmbed";
 import { EditorContextMenu } from "./EditorContextMenu";
 import { EditorToolbar } from "./EditorToolbar";
 import { EditorBubbleMenu } from "./EditorBubbleMenu";
@@ -37,6 +38,7 @@ import { BoardView } from "../board/BoardView";
 import { saveAttachment } from "../../lib/vault";
 import { detectFileCategory, type FileCategory } from "../../lib/fileTypes";
 import * as agentsApi from "../../lib/agents";
+import * as api from "../../lib/tauri";
 
 // Configure marked for safe HTML output
 marked.setOptions({
@@ -104,13 +106,86 @@ function insertFileByCategory(
  * - Code: js, ts, py, rs, go, java, c, cpp, etc.
  * - Text: txt, md
  */
+// URL regex pattern for detecting standalone URLs
+const URL_PATTERN = /^https?:\/\/[^\s]+$/;
+
+/**
+ * Scan the editor content for standalone URLs that should be converted to embeds.
+ * This handles cases where URLs in saved content aren't being rendered as preview blocks.
+ */
+function convertStandaloneUrlsToEmbeds(editor: Editor): void {
+  const { doc } = editor.state;
+  const nodesToReplace: Array<{ from: number; to: number; url: string }> = [];
+
+  doc.descendants((node, pos) => {
+    // Skip if this is already a urlEmbed node
+    if (node.type.name === "urlEmbed") {
+      return false;
+    }
+
+    // Check paragraph nodes for standalone URLs
+    if (node.type.name === "paragraph" && node.childCount === 1) {
+      const child = node.firstChild;
+      
+      // Case 1: Paragraph contains only a text node that is a URL
+      if (child && child.type.name === "text" && child.text) {
+        const text = child.text.trim();
+        if (URL_PATTERN.test(text)) {
+          nodesToReplace.push({
+            from: pos,
+            to: pos + node.nodeSize,
+            url: text,
+          });
+          return false;
+        }
+      }
+      
+      // Case 2: Paragraph contains only a link with a URL
+      if (child && child.type.name === "text" && child.marks.length > 0) {
+        const linkMark = child.marks.find(m => m.type.name === "link");
+        if (linkMark && child.text) {
+          const href = linkMark.attrs.href as string;
+          const text = child.text.trim();
+          // If the link text matches the URL or is a standalone URL
+          if (URL_PATTERN.test(text) || text === href) {
+            nodesToReplace.push({
+              from: pos,
+              to: pos + node.nodeSize,
+              url: href || text,
+            });
+            return false;
+          }
+        }
+      }
+    }
+
+    return true;
+  });
+
+  // Replace nodes in reverse order to maintain positions
+  if (nodesToReplace.length > 0) {
+    const tr = editor.state.tr;
+    for (let i = nodesToReplace.length - 1; i >= 0; i--) {
+      const { from, to, url } = nodesToReplace[i];
+      const urlEmbedNode = editor.state.schema.nodes.urlEmbed.create({
+        url,
+        status: "loading",
+      });
+      tr.replaceWith(from, to, urlEmbedNode);
+    }
+    editor.view.dispatch(tr);
+    console.log(`[NoteEditor] Converted ${nodesToReplace.length} standalone URL(s) to embed(s)`);
+  }
+}
+
 export function NoteEditor() {
   const selectedNote = useSelectedNote();
   const { updateNote, createNote, openNote } = useNoteStore();
   const { selectedBoardId } = useBoardStore();
-  const { startAgent, stopAgent } = useAgentActivityStore();
-  const { isEditorToolbarVisible } = useSettingsStore();
+  const { queueTask } = useAgentActivityStore();
+  const { isEditorToolbarVisible, agentSettings } = useSettingsStore();
   const [title, setTitle] = useState("");
+  const [isTagging, setIsTagging] = useState(false);
   const lastSyncedHtmlRef = useRef<string>("");
 
   // Track the current note ID to prevent saving after deletion
@@ -255,13 +330,14 @@ export function NoteEditor() {
         },
       }),
       Typography, // Smart quotes, dashes, etc.
-      WikiLink, // Wiki-style [[note]] links
-      Video, // Video embedding with custom player
-      Audio, // Audio embedding with custom player
-      FileBlock, // File blocks for PDFs, code, text, office docs
-      AIBlock, // AI assistant blocks
-      SlashCommand, // Slash command menu
-      MermaidBlock, // Mermaid diagram rendering
+      wikiLink, // Wiki-style [[note]] links
+      video, // Video embedding with custom player
+      audio, // Audio embedding with custom player
+      fileBlock, // File blocks for PDFs, code, text, office docs
+      aiBlock, // AI assistant blocks
+      slashCommand, // Slash command menu
+      mermaidBlock, // Mermaid diagram rendering
+      urlEmbed, // URL preview embeds
       // Table support
       Table.configure({
         resizable: true,
@@ -304,12 +380,24 @@ export function NoteEditor() {
           }
         }
 
-        // Check for markdown table in pasted text
+        // Check for text paste
         const text = event.clipboardData?.getData("text/plain");
         if (text) {
+          const trimmedText = text.trim();
+          
+          // Check for standalone URL paste - auto-convert to embed
+          if (URL_PATTERN.test(trimmedText)) {
+            event.preventDefault();
+            const currentEditor = editorRef.current;
+            if (currentEditor) {
+              currentEditor.chain().focus().insertUrlEmbed(trimmedText).run();
+            }
+            return true;
+          }
+          
           // Detect markdown table pattern: lines starting with | and containing |
           // Filter out empty lines to handle tables with blank lines between rows
-          const lines = text.trim().split("\n").filter(line => line.trim().length > 0);
+          const lines = trimmedText.split("\n").filter(line => line.trim().length > 0);
           const isMarkdownTable = lines.length >= 2 && 
             lines.every(line => line.trim().startsWith("|") && line.trim().endsWith("|")) &&
             lines.some(line => /^\|[\s\-:]+\|/.test(line.trim())); // Has separator row
@@ -441,43 +529,48 @@ export function NoteEditor() {
       : contextMenu.selectedText;
     const contentType = isAttachment ? "attachment" : "selection";
 
-    // Track agent activity
-    startAgent({
-      id: executionId,
-      type: "summarization",
-      noteId: selectedNote.id,
-      noteTitle: selectedNote.title,
-    });
-
-    // Set up content streaming listener
+    // Queue the summarization task
     try {
-      const unlisten = await agentsApi.listenForAgentContent(executionId, async (event) => {
-        if (editor && !editor.isDestroyed) {
-          // Convert markdown to HTML and insert
-          const html = await marked.parse(event.content);
-          editor.chain().focus().insertContent(html).run();
-        }
-      });
-      unlistenContentRef.current = unlisten;
+      await queueTask(
+        {
+          id: executionId,
+          type: "summarization",
+          noteId: selectedNote.id,
+          noteTitle: selectedNote.title,
+        },
+        async () => {
+          // Set up content streaming listener
+          const unlisten = await agentsApi.listenForAgentContent(executionId, async (event) => {
+            if (editor && !editor.isDestroyed) {
+              // Convert markdown to HTML and insert
+              const html = await marked.parse(event.content);
+              editor.chain().focus().insertContent(html).run();
+            }
+          });
+          unlistenContentRef.current = unlisten;
 
-      // Execute the agent
-      await agentsApi.executeSummarizationAgent(
-        executionId,
-        content,
-        contentType,
-        isAttachment ? contextMenu.selectedAttachment?.src : undefined
+          try {
+            // Execute the agent
+            await agentsApi.executeSummarizationAgent(
+              executionId,
+              content,
+              contentType,
+              isAttachment ? contextMenu.selectedAttachment?.src : undefined
+            );
+          } finally {
+            if (unlistenContentRef.current) {
+              unlistenContentRef.current();
+              unlistenContentRef.current = null;
+            }
+          }
+        }
       );
     } catch (err) {
       console.error("[NoteEditor] Summarization error:", err);
     } finally {
-      stopAgent(executionId);
       activeExecutionRef.current = null;
-      if (unlistenContentRef.current) {
-        unlistenContentRef.current();
-        unlistenContentRef.current = null;
-      }
     }
-  }, [contextMenu, selectedNote, startAgent, stopAgent]);
+  }, [contextMenu, selectedNote, queueTask]);
 
   // Execute research agent
   const handleResearch = useCallback(async () => {
@@ -493,63 +586,91 @@ export function NoteEditor() {
       ? `Research the content of: ${contextMenu.selectedAttachment!.filename}`
       : contextMenu.selectedText;
     
-    // Track agent activity
-    startAgent({
-      id: executionId,
-      type: "research",
-      noteId: selectedNote.id,
-      noteTitle: selectedNote.title,
-    });
-
-    // Set up content streaming listener
+    // Queue the research task
     try {
-      const unlisten = await agentsApi.listenForAgentContent(executionId, async (event) => {
-        if (editor && !editor.isDestroyed) {
-          // Convert markdown to HTML and insert
-          const html = await marked.parse(event.content);
-          editor.chain().focus().insertContent(html).run();
-        }
-      });
-      unlistenContentRef.current = unlisten;
+      await queueTask(
+        {
+          id: executionId,
+          type: "research",
+          noteId: selectedNote.id,
+          noteTitle: selectedNote.title,
+        },
+        async () => {
+          // Set up content streaming listener
+          const unlisten = await agentsApi.listenForAgentContent(executionId, async (event) => {
+            if (editor && !editor.isDestroyed) {
+              // Convert markdown to HTML and insert
+              const html = await marked.parse(event.content);
+              editor.chain().focus().insertContent(html).run();
+            }
+          });
+          unlistenContentRef.current = unlisten;
 
-      // Execute the agent
-      await agentsApi.executeResearchAgent(
-        executionId,
-        topic,
-        isAttachment ? undefined : contextMenu.selectedText
+          try {
+            // Execute the agent
+            await agentsApi.executeResearchAgent(
+              executionId,
+              topic,
+              isAttachment ? undefined : contextMenu.selectedText
+            );
+          } finally {
+            if (unlistenContentRef.current) {
+              unlistenContentRef.current();
+              unlistenContentRef.current = null;
+            }
+          }
+        }
       );
     } catch (err) {
       console.error("[NoteEditor] Research error:", err);
     } finally {
-      stopAgent(executionId);
       activeExecutionRef.current = null;
-      if (unlistenContentRef.current) {
-        unlistenContentRef.current();
-        unlistenContentRef.current = null;
-      }
     }
-  }, [contextMenu, selectedNote, startAgent, stopAgent]);
+  }, [contextMenu, selectedNote, queueTask]);
 
-  // Update editor content when selected note changes
+  // Update editor content when selected note changes or when content is updated externally
+  // We watch updatedAt to detect external changes (e.g., from chat agent) without triggering on every keystroke
   useEffect(() => {
-    if (selectedNote) {
-      setTitle(selectedNote.title);
-      // Set content from HTML if available, otherwise from plain text
-      if (editor) {
-        const newContent = selectedNote.contentHtml || selectedNote.content || "";
-        // Only update if content is different to avoid cursor jump
-        if (editor.getHTML() !== newContent) {
-          editor.commands.setContent(newContent);
-          lastSyncedHtmlRef.current = newContent;
+    const updateEditorContent = async () => {
+      if (selectedNote) {
+        setTitle(selectedNote.title);
+        // Set content from HTML if available, otherwise convert markdown to HTML
+        if (editor) {
+          // If contentHtml is empty but content has markdown, convert it
+          let newContent: string;
+          if (!selectedNote.contentHtml && selectedNote.content) {
+            // Convert markdown to HTML for the editor
+            newContent = await marked.parse(selectedNote.content);
+            console.log("[NoteEditor] Converted markdown to HTML for display");
+          } else {
+            newContent = selectedNote.contentHtml || selectedNote.content || "";
+          }
+          
+          // Only update if content is different to avoid cursor jump
+          if (editor.getHTML() !== newContent) {
+            console.log("[NoteEditor] Updating editor content from store (updatedAt changed)");
+            editor.commands.setContent(newContent);
+            lastSyncedHtmlRef.current = newContent;
+            
+            // After loading content, check for standalone URLs that should be embeds
+            // Use setTimeout to ensure the content is fully set before scanning
+            setTimeout(() => {
+              if (editor && !editor.isDestroyed) {
+                convertStandaloneUrlsToEmbeds(editor);
+              }
+            }, 100);
+          }
         }
+      } else {
+        setTitle("");
+        editor?.commands.setContent("");
+        lastSyncedHtmlRef.current = "";
       }
-    } else {
-      setTitle("");
-      editor?.commands.setContent("");
-      lastSyncedHtmlRef.current = "";
-    }
+    };
+    
+    updateEditorContent();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNote?.id, editor]);
+  }, [selectedNote?.id, selectedNote?.updatedAt, editor]);
 
   // Attach click and context menu handlers
   useEffect(() => {
@@ -597,6 +718,21 @@ export function NoteEditor() {
   const handleTitleBlur = () => {
     if (selectedNote && title !== selectedNote.title) {
       updateNote(selectedNote.id, { title });
+    }
+  };
+
+  // Handle AI tagging
+  const handleTagWithAI = async () => {
+    if (!selectedNote || isTagging) return;
+    
+    setIsTagging(true);
+    try {
+      await api.runTaggingAgent(selectedNote.id);
+      // The NoteTags component will automatically refresh when tags are updated
+    } catch (err) {
+      console.error("[NoteEditor] AI tagging error:", err);
+    } finally {
+      setIsTagging(false);
     }
   };
 
@@ -723,6 +859,38 @@ export function NoteEditor() {
         <div className="flex items-center gap-2">
           {/* Daily Note Navigation */}
           <DailyNoteNavigation noteId={selectedNote.id} />
+          
+          {/* Tag with AI Button */}
+          {agentSettings.taggingEnabled && (
+            <button
+              onClick={handleTagWithAI}
+              disabled={isTagging}
+              className="cursor-pointer rounded-lg p-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ color: "var(--color-text-secondary)" }}
+              onMouseEnter={(e) => {
+                if (!isTagging) {
+                  e.currentTarget.style.backgroundColor = "var(--color-bg-hover)";
+                }
+              }}
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.backgroundColor = "transparent")
+              }
+              title="Tag with AI"
+            >
+              {isTagging ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <span className="relative inline-flex">
+                  <Tag size={18} />
+                  <Sparkles 
+                    size={10} 
+                    className="absolute -right-1 -top-1" 
+                    style={{ color: "var(--color-accent)" }}
+                  />
+                </span>
+              )}
+            </button>
+          )}
           
           <button
             onClick={handleFileUpload}

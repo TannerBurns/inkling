@@ -15,7 +15,7 @@ export interface WikiLinkOptions {
  * WikiLink extension for TipTap
  * Enables [[note]] style links with autocomplete
  */
-export const WikiLink = Node.create<WikiLinkOptions>({
+export const wikiLink = Node.create<WikiLinkOptions>({
   name: "wikiLink",
 
   group: "inline",
@@ -198,4 +198,4 @@ export const WikiLink = Node.create<WikiLinkOptions>({
   },
 });
 
-export default WikiLink;
+export default wikiLink;

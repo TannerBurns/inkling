@@ -288,6 +288,15 @@ pub fn run() {
             // Assistant commands
             commands::generate_assistant_content,
             commands::get_assistant_fallback,
+            // URL attachment commands
+            commands::add_url_attachment,
+            commands::get_url_attachments,
+            commands::get_url_attachment,
+            commands::remove_url_attachment,
+            commands::refresh_url_attachment,
+            commands::get_pending_url_attachments,
+            commands::get_url_metadata,
+            commands::discover_and_index_urls,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

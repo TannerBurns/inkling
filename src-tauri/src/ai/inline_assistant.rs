@@ -4,36 +4,49 @@
 //! directly within their notes. Uses tools like web search, image fetching,
 //! and diagram generation.
 //!
-//! NOTE: This module is being integrated via the agent command system.
+//! Now uses the unified streaming agent for real-time streaming responses
+//! with tool calling support.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 
 use crate::db::connection::DbPool;
 
-use super::agent::{run_agent_with_events, AgentError, CancellationToken, ToolDefinition, ToolExecutor};
+use super::agent::{AgentError, CancellationToken, ToolCallRecord, ToolDefinition};
+use super::chat_executor::UnifiedToolExecutor;
 use super::config::AIProvider;
-use super::tools::{
-    execute_export_notes_docx, execute_export_notes_pdf, execute_export_selection_xlsx,
-    execute_search_notes, execute_web_search, format_results_for_agent,
-    get_export_notes_docx_tool, get_export_notes_pdf_tool, get_export_selection_xlsx_tool,
-    get_search_notes_tool, get_web_search_tool, AgentConfig,
-    get_all_document_builder_tools, get_document_builder_tool_function,
-};
+use super::llm::ChatMessage;
+use super::streaming_agent::run_streaming_agent;
+use super::tools::{get_unified_agent_tools, AgentConfig};
 
 /// System prompt for the inline assistant
 pub const INLINE_ASSISTANT_SYSTEM_PROMPT: &str = r#"You are an inline writing assistant for a note-taking app called Inkling.
-The user will ask you to help with research, content creation, diagrams, images, or document exports.
+The user will ask you to help with research, content creation, diagrams, or document exports.
 
 AVAILABLE TOOLS:
+Knowledge Retrieval:
 - search_notes: Search the user's existing notes for relevant information
+- search_url_embeddings: Search through indexed web pages and URL attachments
+- read_note: Get the full content of a specific note by ID or title
+- get_note_links: Get backlinks and outgoing links for a note
+- read_url_content: Get the full scraped content from a URL attachment
+- get_note_tags: Get all tags assigned to a note
+- search_by_tag: Find notes with a specific tag
+- get_related_notes: Find semantically similar notes to a given note
+- get_notes_sharing_tags: Find notes that share tags with a given note
+- get_calendar_events: Get calendar events within a date range
+- get_daily_note: Get the daily journal note for a specific date
+- get_recent_notes: Get recently modified notes
+- list_folders: Browse the folder structure
+- get_notes_in_folder: Get all notes in a specific folder
 - web_search: Search the web for current information (if enabled)
-- fetch_image: Find a relevant image from Unsplash (if enabled)
-- generate_image: Generate an image using AI (if enabled)
+
+Content Creation:
 - create_mermaid: Create a Mermaid diagram (flowcharts, sequences, etc.)
-- create_excalidraw: Create an Excalidraw sketch diagram
 - write_content: Output the final markdown content to be inserted
+- create_note: Create a new note in the vault
+- create_calendar_event: Schedule a new calendar event
+
+Document Export:
 - export_notes_pdf: Export notes to a PDF document
 - export_notes_docx: Export notes to a Word document
 - export_selection_xlsx: Export table content to an Excel spreadsheet
@@ -49,7 +62,7 @@ WORKFLOW:
 1. Analyze what the user is asking for
 2. Use appropriate tools to gather information or create visuals
 3. Use write_content to produce the final markdown output
-4. Include proper attribution for images and sources
+4. Include proper attribution for sources
 
 DOCUMENT EXPORT WORKFLOW:
 Quick export (single action):
@@ -70,7 +83,7 @@ Use write_content as your final action to output the completed content.
 GUIDELINES:
 - Be concise but thorough
 - Use headings, bullet points, and formatting for clarity
-- For diagrams, prefer Mermaid for flowcharts/sequences, Excalidraw for sketches
+- For diagrams, use Mermaid for flowcharts, sequences, class diagrams, etc.
 - Always cite sources when using information from web search or notes
 - When exporting documents, always provide a descriptive title
 - If you can't find relevant information, say so rather than making things up
@@ -87,359 +100,14 @@ pub struct InlineAssistantResult {
     /// Number of iterations
     pub iterations: usize,
     /// All tool calls made
-    pub tool_calls: Vec<super::agent::ToolCallRecord>,
-}
-
-/// The inline assistant agent that implements ToolExecutor
-pub struct InlineAssistant {
-    pool: DbPool,
-    provider: AIProvider,
-    config: AgentConfig,
-}
-
-impl InlineAssistant {
-    /// Create a new inline assistant
-    pub fn new(
-        pool: DbPool,
-        provider: AIProvider,
-        config: AgentConfig,
-    ) -> Self {
-        Self {
-            pool,
-            provider,
-            config,
-        }
-    }
-
-    /// Search notes using semantic search
-    async fn search_notes(&self, args: Value) -> Result<String, String> {
-        execute_search_notes(&self.pool, &self.provider, args).await
-    }
-
-    /// Perform web search using the configured provider
-    async fn web_search(&self, args: Value) -> Result<String, String> {
-        if !self.config.is_tool_enabled("web_search") {
-            return Err("Web search is not enabled".to_string());
-        }
-
-        let query = args
-            .get("query")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'query' argument")?;
-
-        log::info!("[InlineAssistant] Executing web search: {}", query);
-
-        let results = execute_web_search(&self.config.web_search, query).await?;
-
-        log::info!(
-            "[InlineAssistant] Web search returned {} results",
-            results.len()
-        );
-
-        Ok(format_results_for_agent(&results))
-    }
-
-    /// Fetch an image from Unsplash or other sources
-    async fn fetch_image(&self, args: Value) -> Result<String, String> {
-        if !self.config.is_tool_enabled("fetch_image") {
-            return Err("Image fetching is not enabled".to_string());
-        }
-
-        let query = args
-            .get("query")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'query' argument")?;
-
-        if !self.config.image.is_configured() {
-            return Err("Image provider is not configured. Please set up in Settings.".to_string());
-        }
-
-        // TODO: Implement actual image fetching
-        Ok(json!({
-            "error": "Image fetching not yet implemented",
-            "query": query,
-            "message": "Please configure an image provider in Settings"
-        }).to_string())
-    }
-
-    /// Generate an image using AI
-    async fn generate_image(&self, args: Value) -> Result<String, String> {
-        if !self.config.is_tool_enabled("generate_image") {
-            return Err("Image generation is not enabled".to_string());
-        }
-
-        let prompt = args
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'prompt' argument")?;
-
-        if !self.config.image.allow_generation {
-            return Err("AI image generation is disabled in Settings.".to_string());
-        }
-
-        // TODO: Implement actual image generation via AI provider
-        Ok(json!({
-            "error": "Image generation not yet implemented",
-            "prompt": prompt,
-            "message": "AI image generation will use the configured provider"
-        }).to_string())
-    }
-
-    /// Create a Mermaid diagram
-    fn create_mermaid(&self, args: Value) -> Result<String, String> {
-        let diagram_type = args
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("flowchart");
-
-        let description = args
-            .get("description")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'description' argument")?;
-
-        // The LLM should generate the actual mermaid code
-        // This tool just validates and wraps the output
-        let code = args
-            .get("code")
-            .and_then(|v| v.as_str());
-
-        if let Some(mermaid_code) = code {
-            // Return the mermaid code block
-            Ok(json!({
-                "success": true,
-                "format": "mermaid",
-                "code": mermaid_code,
-                "markdown": format!("```mermaid\n{}\n```", mermaid_code)
-            }).to_string())
-        } else {
-            // If no code provided, return a template based on type
-            let template = match diagram_type {
-                "flowchart" => "flowchart TD\n    A[Start] --> B[Process]\n    B --> C[End]",
-                "sequence" => "sequenceDiagram\n    participant A\n    participant B\n    A->>B: Message",
-                "classDiagram" => "classDiagram\n    class Example {\n        +String name\n        +method()\n    }",
-                "stateDiagram" => "stateDiagram-v2\n    [*] --> State1\n    State1 --> [*]",
-                "erDiagram" => "erDiagram\n    ENTITY1 ||--o{ ENTITY2 : contains",
-                "gantt" => "gantt\n    title Project\n    section Phase1\n    Task1 :a1, 2024-01-01, 30d",
-                _ => "flowchart TD\n    A[Start] --> B[End]",
-            };
-
-            Ok(json!({
-                "success": true,
-                "format": "mermaid",
-                "template": template,
-                "description": description,
-                "message": "Use this template and modify based on the description"
-            }).to_string())
-        }
-    }
-
-    /// Create an Excalidraw diagram
-    fn create_excalidraw(&self, args: Value) -> Result<String, String> {
-        let description = args
-            .get("description")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'description' argument")?;
-
-        // Excalidraw diagrams are JSON-based
-        // For now, return a placeholder structure
-        // In the future, the LLM could generate actual Excalidraw JSON
-        
-        let elements = args
-            .get("elements")
-            .cloned()
-            .unwrap_or(json!([]));
-
-        Ok(json!({
-            "success": true,
-            "format": "excalidraw",
-            "description": description,
-            "elements": elements,
-            "message": "Excalidraw diagram structure created"
-        }).to_string())
-    }
-
-    /// Write content - the final output tool
-    fn write_content(&self, args: Value) -> Result<String, String> {
-        let content = args
-            .get("content")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing 'content' argument")?;
-
-        // This tool simply returns the content as the final output
-        // The agent runner will use this as the final response
-        Ok(json!({
-            "success": true,
-            "content": content,
-            "message": "Content ready for insertion"
-        }).to_string())
-    }
-}
-
-#[async_trait]
-impl ToolExecutor for InlineAssistant {
-    async fn execute(&self, name: &str, args: Value) -> Result<String, String> {
-        match name {
-            "search_notes" => self.search_notes(args).await,
-            "web_search" => self.web_search(args).await,
-            "fetch_image" => self.fetch_image(args).await,
-            "generate_image" => self.generate_image(args).await,
-            "create_mermaid" => self.create_mermaid(args),
-            "create_excalidraw" => self.create_excalidraw(args),
-            "write_content" => self.write_content(args),
-            "export_notes_pdf" => execute_export_notes_pdf(&self.pool, args),
-            "export_notes_docx" => execute_export_notes_docx(&self.pool, args),
-            "export_selection_xlsx" => execute_export_selection_xlsx(&self.pool, args),
-            // Document builder tools
-            "create_document" | "add_section" | "add_table" | "save_document" | "cancel_document" => {
-                if let Some(tool_fn) = get_document_builder_tool_function(name) {
-                    tool_fn(args)
-                } else {
-                    Err(format!("Document builder tool not found: {}", name))
-                }
-            }
-            _ => Err(format!("Unknown tool: {}", name)),
-        }
-    }
+    pub tool_calls: Vec<ToolCallRecord>,
 }
 
 /// Get the tool definitions for the inline assistant
-/// Only returns tools that are enabled in the config
+/// Uses the unified tool builder with write_content enabled (inline assistant inserts content)
 pub fn get_inline_assistant_tools(config: &AgentConfig) -> Vec<ToolDefinition> {
-    let mut tools = Vec::new();
-
-    // Always include search_notes and write_content
-    tools.push(get_search_notes_tool());
-    
-    // Web search
-    if config.is_tool_enabled("web_search") {
-        tools.push(get_web_search_tool());
-    }
-
-    // Image fetching
-    if config.is_tool_enabled("fetch_image") {
-        tools.push(ToolDefinition::function(
-            "fetch_image",
-            "Find a relevant image from Unsplash based on a query. Returns an image URL with attribution.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Description of the image to find"
-                    }
-                },
-                "required": ["query"]
-            }),
-        ));
-    }
-
-    // Image generation
-    if config.is_tool_enabled("generate_image") {
-        tools.push(ToolDefinition::function(
-            "generate_image",
-            "Generate an image using AI based on a detailed prompt.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "prompt": {
-                        "type": "string",
-                        "description": "Detailed description of the image to generate"
-                    }
-                },
-                "required": ["prompt"]
-            }),
-        ));
-    }
-
-    // Mermaid diagrams
-    if config.is_tool_enabled("create_mermaid") {
-        tools.push(ToolDefinition::function(
-            "create_mermaid",
-            "Create a Mermaid diagram. Supports flowcharts, sequence diagrams, class diagrams, etc.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "type": {
-                        "type": "string",
-                        "enum": ["flowchart", "sequence", "classDiagram", "stateDiagram", "erDiagram", "gantt"],
-                        "description": "Type of diagram to create"
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Description of what the diagram should show"
-                    },
-                    "code": {
-                        "type": "string",
-                        "description": "The actual Mermaid diagram code"
-                    }
-                },
-                "required": ["description"]
-            }),
-        ));
-    }
-
-    // Excalidraw diagrams
-    if config.is_tool_enabled("create_excalidraw") {
-        tools.push(ToolDefinition::function(
-            "create_excalidraw",
-            "Create an Excalidraw sketch-style diagram.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "description": {
-                        "type": "string",
-                        "description": "Description of what the diagram should show"
-                    },
-                    "elements": {
-                        "type": "array",
-                        "description": "Excalidraw elements (optional)"
-                    }
-                },
-                "required": ["description"]
-            }),
-        ));
-    }
-
-    // Write content (always included)
-    tools.push(ToolDefinition::function(
-        "write_content",
-        "Output the final markdown content to be inserted into the note. Use this as your final action.",
-        json!({
-            "type": "object",
-            "properties": {
-                "content": {
-                    "type": "string",
-                    "description": "The markdown content to insert"
-                }
-            },
-            "required": ["content"]
-        }),
-    ));
-
-    // Export tools (always included for document generation)
-    if config.is_tool_enabled("export_notes_pdf") {
-        tools.push(get_export_notes_pdf_tool());
-    }
-    if config.is_tool_enabled("export_notes_docx") {
-        tools.push(get_export_notes_docx_tool());
-    }
-    if config.is_tool_enabled("export_selection_xlsx") {
-        tools.push(get_export_selection_xlsx_tool());
-    }
-
-    // Document builder tools (for multi-step document creation)
-    if config.is_tool_enabled("create_document") {
-        for tool_json in get_all_document_builder_tools() {
-            if let Some(func) = tool_json.get("function") {
-                let name = func.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let description = func.get("description").and_then(|v| v.as_str()).unwrap_or("");
-                let parameters = func.get("parameters").cloned().unwrap_or(json!({}));
-                tools.push(ToolDefinition::function(name, description, parameters));
-            }
-        }
-    }
-
-    tools
+    // Inline assistant needs write_content to output content for insertion into notes
+    get_unified_agent_tools(config, true)
 }
 
 /// Maximum characters for note context in system prompt
@@ -480,7 +148,12 @@ fn build_system_prompt(note_context: Option<&str>) -> String {
     prompt
 }
 
-/// Run the inline assistant with event streaming
+/// Run the inline assistant with streaming support
+///
+/// This function uses the unified streaming agent for real-time streaming
+/// of both content and tool calls. Events are emitted to the frontend
+/// as they happen.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_inline_assistant_with_events(
     app_handle: &tauri::AppHandle,
     execution_id: &str,
@@ -490,35 +163,60 @@ pub async fn run_inline_assistant_with_events(
     request: &str,
     config: AgentConfig,
     note_context: Option<&str>,
-    cancellation_token: Option<&CancellationToken>,
+    _cancellation_token: Option<&CancellationToken>,
 ) -> Result<InlineAssistantResult, AgentError> {
-    let agent = InlineAssistant::new(
-        pool.clone(),
-        provider.clone(),
-        config.clone(),
-    );
-
-    let tools = get_inline_assistant_tools(&config);
+    // Build the system prompt with optional note context
     let system_prompt = build_system_prompt(note_context);
-
-    let result = run_agent_with_events(
+    
+    // Build messages for the streaming agent (inline assistant is single-turn)
+    let messages = vec![
+        ChatMessage::system(&system_prompt),
+        ChatMessage::user(request),
+    ];
+    
+    // Get tools for inline assistant (includes write_content)
+    let tools = get_inline_assistant_tools(&config);
+    
+    // Convert to LLM tool definitions
+    let llm_tools: Vec<super::llm::ToolDefinition> = tools
+        .iter()
+        .map(|t| super::llm::ToolDefinition {
+            tool_type: t.tool_type.clone(),
+            function: super::llm::FunctionDefinition {
+                name: t.function.name.clone(),
+                description: t.function.description.clone(),
+                parameters: t.function.parameters.clone(),
+            },
+        })
+        .collect();
+    
+    // Create the unified tool executor
+    let executor = UnifiedToolExecutor::new(pool.clone(), provider.clone(), config);
+    
+    log::info!(
+        "[InlineAssistant] Running streaming agent with {} tools for execution {}",
+        llm_tools.len(),
+        execution_id
+    );
+    
+    // Run the streaming agent (no cancellation support for inline assistant currently)
+    let result = run_streaming_agent(
         app_handle,
         execution_id,
-        "Inline Assistant",
         provider,
         model,
-        &system_prompt,
-        request,
-        tools,
-        &agent,
+        messages,
+        llm_tools,
+        &executor,
         30, // Max 30 iterations
-        cancellation_token,
+        None, // No cancellation for inline assistant
     )
-    .await?;
+    .await
+    .map_err(|e| AgentError::ToolError(e.to_string()))?;
 
     // Extract unique tool names used
     let tools_used: Vec<String> = result
-        .tool_calls_made
+        .tool_calls
         .iter()
         .map(|tc| tc.tool_name.clone())
         .collect::<std::collections::HashSet<_>>()
@@ -526,10 +224,10 @@ pub async fn run_inline_assistant_with_events(
         .collect();
 
     Ok(InlineAssistantResult {
-        content: result.final_response,
+        content: result.content,
         tools_used,
         iterations: result.iterations,
-        tool_calls: result.tool_calls_made,
+        tool_calls: result.tool_calls,
     })
 }
 
@@ -542,10 +240,13 @@ mod tests {
         let config = AgentConfig::default();
         let tools = get_inline_assistant_tools(&config);
         
-        // Should at least have search_notes, create_mermaid, and write_content
+        // Should have all tools including write_content
         let tool_names: Vec<&str> = tools.iter().map(|t| t.function.name.as_str()).collect();
         assert!(tool_names.contains(&"search_notes"));
         assert!(tool_names.contains(&"write_content"));
+        assert!(tool_names.contains(&"create_mermaid"));
+        assert!(tool_names.contains(&"create_note"));
+        assert!(tool_names.contains(&"export_notes_pdf"));
     }
 
     #[test]

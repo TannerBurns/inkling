@@ -1,8 +1,8 @@
 import { create } from "zustand";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Note, UpdateNoteInput } from "../types/note";
 import * as api from "../lib/tauri";
 import { embedNote } from "../lib/search";
-import { useSettingsStore } from "./settingsStore";
 import { useAgentActivityStore } from "./agentActivityStore";
 import { useDailyNotesStore } from "./dailyNotesStore";
 import { useEditorGroupStore } from "./editorGroupStore";
@@ -221,49 +221,22 @@ export const useNoteStore = create<NoteState>((set, get) => ({
       if (updates.content !== undefined || updates.title !== undefined) {
         const embedAgentId = `embedding-${id}-${Date.now()}`;
         const note = get().notes.find((n) => n.id === id);
-        const { startAgent, stopAgent } = useAgentActivityStore.getState();
+        const { queueTask } = useAgentActivityStore.getState();
         
-        startAgent({
-          id: embedAgentId,
-          type: "embedding",
-          noteId: id,
-          noteTitle: note?.title || "Untitled",
-        });
-        
-        embedNote(id)
-          .catch((err) => {
-            console.warn("Failed to re-embed note:", err);
-          })
-          .finally(() => {
-            stopAgent(embedAgentId);
-          });
-        
-        // Run tagging agent if enabled (queue in background)
-        const { agentSettings } = useSettingsStore.getState();
-        if (agentSettings.taggingEnabled) {
-          const agentId = `tagging-${id}-${Date.now()}`;
-          const note = get().notes.find((n) => n.id === id);
-          const { startAgent, stopAgent } = useAgentActivityStore.getState();
-          
-          startAgent({
-            id: agentId,
-            type: "tagging",
+        // Queue embedding task
+        queueTask(
+          {
+            id: embedAgentId,
+            type: "embedding",
             noteId: id,
             noteTitle: note?.title || "Untitled",
-          });
-          
-          console.log("[TaggingAgent] Starting tagging for note:", id, note?.title);
-          api.runTaggingAgent(id)
-            .then((result) => {
-              console.log("[TaggingAgent] Success:", result);
-            })
-            .catch((err) => {
-              console.error("[TaggingAgent] Failed:", err);
-            })
-            .finally(() => {
-              stopAgent(agentId);
-            });
-        }
+          },
+          async () => {
+            await embedNote(id);
+          }
+        ).catch((err) => {
+          console.warn("Failed to re-embed note:", err);
+        });
       }
     } catch (error) {
       set({ error: String(error) });
@@ -388,3 +361,58 @@ export const useOpenNotes = () => {
     .map((id) => notes.find((n) => n.id === id))
     .filter((n): n is Note => n !== undefined);
 };
+
+// ============================================================================
+// Note Content Updated Listener
+// ============================================================================
+
+/** Event payload for note-content-updated */
+interface NoteContentUpdatedEvent {
+  noteId: string;
+  source: string;
+}
+
+let noteContentUnlistenFn: UnlistenFn | null = null;
+
+/**
+ * Initialize the note content updated event listener.
+ * This listens for backend events when a note is updated (e.g., by chat agent)
+ * and refreshes the note in the store.
+ */
+export async function initNoteContentListener(): Promise<void> {
+  if (noteContentUnlistenFn) {
+    noteContentUnlistenFn();
+  }
+
+  noteContentUnlistenFn = await listen<NoteContentUpdatedEvent>(
+    "note-content-updated",
+    async (event) => {
+      const { noteId, source } = event.payload;
+      console.log(`[NoteStore] Note content updated: ${noteId} (source: ${source})`);
+
+      try {
+        // Fetch the updated note from the backend
+        const updatedNote = await api.getNote(noteId);
+        if (updatedNote) {
+          // Update the note in the store
+          useNoteStore.setState((state) => ({
+            notes: state.notes.map((n) => (n.id === noteId ? updatedNote : n)),
+          }));
+          console.log(`[NoteStore] Refreshed note: ${updatedNote.title}`);
+        }
+      } catch (error) {
+        console.error(`[NoteStore] Failed to refresh note ${noteId}:`, error);
+      }
+    }
+  );
+}
+
+/**
+ * Cleanup the note content updated event listener.
+ */
+export function cleanupNoteContentListener(): void {
+  if (noteContentUnlistenFn) {
+    noteContentUnlistenFn();
+    noteContentUnlistenFn = null;
+  }
+}

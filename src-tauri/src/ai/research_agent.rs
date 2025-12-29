@@ -189,6 +189,7 @@ pub fn get_research_tools(config: &AgentConfig) -> Vec<ToolDefinition> {
 /// * `vault_path` - Path to the vault
 /// * `config` - Agent configuration
 /// * `cancellation_token` - Optional cancellation token
+#[allow(clippy::too_many_arguments)]
 pub async fn run_research_agent(
     app_handle: &AppHandle,
     execution_id: &str,

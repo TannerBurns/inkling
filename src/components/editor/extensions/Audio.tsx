@@ -27,7 +27,7 @@ declare module "@tiptap/core" {
  * Audio extension for TipTap
  * Enables embedding audio files with custom playback controls
  */
-export const Audio = Node.create<AudioOptions>({
+export const audio = Node.create<AudioOptions>({
   name: "audio",
 
   group: "block",
@@ -128,4 +128,4 @@ function AudioNodeView({ node }: NodeViewProps) {
   );
 }
 
-export default Audio;
+export default audio;
