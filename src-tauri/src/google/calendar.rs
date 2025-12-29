@@ -198,7 +198,26 @@ pub async fn fetch_events_with_pool(
             .await?;
         
         if !response.status().is_success() {
+            let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
+            
+            // Check for insufficient scopes error (403 with ACCESS_TOKEN_SCOPE_INSUFFICIENT)
+            // This happens when the token was obtained with different scopes than currently required.
+            // The only fix is to re-authenticate with the correct scopes.
+            if status.as_u16() == 403 && 
+               (error_text.contains("ACCESS_TOKEN_SCOPE_INSUFFICIENT") || 
+                error_text.contains("insufficientPermissions") ||
+                error_text.contains("insufficient authentication scopes")) {
+                // Clear the account to force re-authentication with correct scopes
+                if let Ok(conn) = pool.get() {
+                    let _ = super::oauth::disconnect_account(&conn);
+                    log::warn!("Google token has insufficient scopes - cleared account. User needs to reconnect.");
+                }
+                return Err(GoogleCalendarError::ApiError(
+                    "Your Google Calendar permissions have changed. Please reconnect your Google account in Settings to restore sync.".to_string()
+                ));
+            }
+            
             return Err(GoogleCalendarError::ApiError(format!(
                 "Failed to fetch events: {}",
                 error_text

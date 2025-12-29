@@ -529,6 +529,20 @@ pub async fn refresh_token_if_needed_with_pool(pool: &DbPool) -> Result<String, 
     
     if !response.status().is_success() {
         let error_text = response.text().await.unwrap_or_default();
+        
+        // Check if this is a token revocation or invalid grant error
+        // These indicate the refresh token is no longer valid and user needs to re-authenticate
+        if error_text.contains("invalid_grant") || error_text.contains("Token has been revoked") {
+            // Clear the invalid account from database to force re-authentication
+            if let Ok(conn) = pool.get() {
+                let _ = disconnect_account(&conn);
+                log::warn!("Google refresh token is invalid/revoked - cleared account. User needs to reconnect.");
+            }
+            return Err(GoogleAuthError::RefreshFailed(
+                "Your Google connection has expired. Please reconnect your Google account in Settings.".to_string()
+            ));
+        }
+        
         return Err(GoogleAuthError::RefreshFailed(error_text));
     }
     

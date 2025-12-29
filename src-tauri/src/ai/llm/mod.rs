@@ -85,7 +85,8 @@ pub fn create_client(provider: &AIProvider) -> Result<Box<dyn LlmClient>, LlmErr
             } else {
                 format!("{}/v1", base_url.trim_end_matches('/'))
             };
-            Ok(Box::new(OpenAIClient::new(&url, None)))
+            // LMStudio doesn't support streaming + tools together, so use the special constructor
+            Ok(Box::new(OpenAIClient::new_with_tool_streaming_disabled(&url, None)))
         }
         ProviderType::VLLM => {
             let base_url = provider

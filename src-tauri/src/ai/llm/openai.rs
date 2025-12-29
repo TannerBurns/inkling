@@ -25,6 +25,8 @@ pub struct OpenAIClient {
     base_url: String,
     api_key: Option<String>,
     client: Client,
+    /// If true, disable streaming when tools are being used (for LMStudio compatibility)
+    disable_streaming_with_tools: bool,
 }
 
 impl OpenAIClient {
@@ -39,7 +41,16 @@ impl OpenAIClient {
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key,
             client,
+            disable_streaming_with_tools: false,
         }
+    }
+
+    /// Create a new OpenAI-compatible client with streaming disabled when tools are used
+    /// This is needed for LMStudio which doesn't support streaming + tools together
+    pub fn new_with_tool_streaming_disabled(base_url: &str, api_key: Option<String>) -> Self {
+        let mut client = Self::new(base_url, api_key);
+        client.disable_streaming_with_tools = true;
+        client
     }
 
     /// Build request headers
@@ -96,6 +107,92 @@ impl OpenAIClient {
                 },
             })
             .collect()
+    }
+
+    /// Simulate streaming by making a non-streaming request and sending events through a channel.
+    /// This is used for LMStudio which doesn't support streaming + tools together.
+    async fn chat_stream_via_non_streaming(
+        &self,
+        request: ChatRequest,
+    ) -> Result<mpsc::Receiver<StreamEvent>, LlmError> {
+        log::debug!("[OpenAIClient] Using non-streaming fallback for tool call (LMStudio compatibility)");
+        
+        let (tx, rx) = mpsc::channel(100);
+
+        // Make the non-streaming request
+        let response = self.chat(request).await;
+
+        // Send results through the channel
+        tokio::spawn(async move {
+            match response {
+                Ok(chat_response) => {
+                    // Send thinking content if present
+                    if let Some(ref thinking) = chat_response.thinking {
+                        let _ = tx
+                            .send(StreamEvent::Thinking {
+                                delta: thinking.clone(),
+                            })
+                            .await;
+                    }
+
+                    // Send content if present
+                    if !chat_response.content.is_empty() {
+                        let _ = tx
+                            .send(StreamEvent::Content {
+                                delta: chat_response.content,
+                            })
+                            .await;
+                    }
+
+                    // Send tool calls if present
+                    if let Some(ref tool_calls) = chat_response.tool_calls {
+                        for tc in tool_calls {
+                            // Send tool call start
+                            let _ = tx
+                                .send(StreamEvent::ToolCallStart {
+                                    id: tc.id.clone(),
+                                    name: tc.function.name.clone(),
+                                })
+                                .await;
+
+                            // Send complete arguments as a single delta
+                            let _ = tx
+                                .send(StreamEvent::ToolCallDelta {
+                                    id: tc.id.clone(),
+                                    arguments_delta: tc.function.arguments.clone(),
+                                })
+                                .await;
+                        }
+                    }
+
+                    // Send usage if present
+                    if let Some(ref usage) = chat_response.usage {
+                        let _ = tx
+                            .send(StreamEvent::Usage {
+                                prompt_tokens: usage.prompt_tokens,
+                                completion_tokens: usage.completion_tokens,
+                            })
+                            .await;
+                    }
+
+                    // Send done event
+                    let _ = tx
+                        .send(StreamEvent::Done {
+                            finish_reason: chat_response.finish_reason,
+                        })
+                        .await;
+                }
+                Err(e) => {
+                    let _ = tx
+                        .send(StreamEvent::Error {
+                            message: e.to_string(),
+                        })
+                        .await;
+                }
+            }
+        });
+
+        Ok(rx)
     }
 }
 
@@ -187,6 +284,15 @@ impl LlmClient for OpenAIClient {
         &self,
         request: ChatRequest,
     ) -> Result<mpsc::Receiver<StreamEvent>, LlmError> {
+        // Check if we should use non-streaming mode (for LMStudio with tools)
+        let has_tools = request.tools.as_ref().map_or(false, |t| !t.is_empty());
+        let use_streaming = !(self.disable_streaming_with_tools && has_tools);
+
+        if !use_streaming {
+            // Fall back to non-streaming mode and simulate streaming events
+            return self.chat_stream_via_non_streaming(request).await;
+        }
+
         let url = format!("{}/chat/completions", self.base_url);
 
         let mut body = serde_json::json!({

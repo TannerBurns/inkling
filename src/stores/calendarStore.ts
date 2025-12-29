@@ -368,6 +368,17 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     } catch (error) {
       // Don't show error for background syncs - just log it
       console.error('Background sync failed:', error);
+      
+      // Check if the error indicates the account was disconnected (insufficient scopes, token revoked, etc.)
+      // If so, refresh the connection status to update the UI
+      const errorMessage = String(error);
+      if (errorMessage.includes('reconnect') || 
+          errorMessage.includes('permissions') || 
+          errorMessage.includes('expired')) {
+        // Refresh connection status - this will update googleConnected state
+        get().checkGoogleConnection();
+      }
+      
       return lastSyncResult || { eventsSynced: 0, eventsAdded: 0, eventsUpdated: 0, eventsRemoved: 0 };
     }
   },
