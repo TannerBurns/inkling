@@ -68,6 +68,9 @@ rust_xlsxwriter = "0.79"
 image = "0.25"
 pulldown-cmark = "0.12"
 
+# Web scraping
+scraper = "0.20"
+
 # Google OAuth
 base64 = "0.22"
 rand = "0.8"

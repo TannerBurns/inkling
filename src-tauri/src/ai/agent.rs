@@ -469,6 +469,7 @@ pub async fn run_agent<E: ToolExecutor>(
 /// * `executor` - Tool executor implementation
 /// * `max_iterations` - Maximum number of LLM iterations
 /// * `cancellation_token` - Optional token for cancelling execution
+#[allow(clippy::too_many_arguments)]
 pub async fn run_agent_with_events<E: ToolExecutor>(
     app_handle: &tauri::AppHandle,
     execution_id: &str,
@@ -602,12 +603,8 @@ pub async fn run_agent_with_events<E: ToolExecutor>(
                         Err(e) => (format!("Error: {}", e), false),
                     };
                     
-                    // Emit tool result event (with preview of result)
-                    let preview = if result_str.len() > 200 {
-                        Some(format!("{}...", &result_str[..200]))
-                    } else {
-                        Some(result_str.clone())
-                    };
+                    // Emit tool result event with full content (no truncation)
+                    let preview = Some(result_str.clone());
                     
                     emit_progress(AgentProgress::ToolResult {
                         tool_name: tool_call.function.name.clone(),

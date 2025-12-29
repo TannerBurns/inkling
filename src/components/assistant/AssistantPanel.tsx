@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Sparkles,
   Calendar,
@@ -29,6 +29,7 @@ import {
   type CalendarEventSummary,
 } from "../../lib/assistant";
 import { formatConversationTime } from "../../lib/chat";
+import { useAgentActivityStore } from "../../stores/agentActivityStore";
 
 // ============================================================================
 // Caching utilities
@@ -123,6 +124,11 @@ export function AssistantPanel() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Ref to prevent duplicate LLM calls
+  const isLoadingContentRef = useRef(false);
+  // Ref to access current content without adding it as a dependency
+  const contentRef = useRef<AssistantContentResponse | null>(null);
 
   // Get today's events from calendar store
   const { getEventsForDate, fetchEventsForRange } = useCalendarStore();
@@ -194,6 +200,11 @@ export function AssistantPanel() {
     fetchAllBoards();
   }, [fetchEventsForRange, fetchConversations, fetchAllBoards]);
 
+  // Keep contentRef in sync with content state
+  useEffect(() => {
+    contentRef.current = content;
+  }, [content]);
+
   // Load cached content on mount (sync, no loading state)
   useEffect(() => {
     const todayStr = getTodayString();
@@ -205,8 +216,17 @@ export function AssistantPanel() {
     }
   }, []);
 
+  // Get the queue task function from the agent activity store
+  const { queueTask } = useAgentActivityStore();
+
   // Generate assistant content with caching
   const loadContent = useCallback(async (forceRefresh = false) => {
+    // Guard against duplicate/concurrent calls (unless forcing refresh)
+    if (isLoadingContentRef.current && !forceRefresh) {
+      console.log("[Assistant] Skipping duplicate loadContent call");
+      return;
+    }
+    
     const todayStr = getTodayString();
     
     // Check cache first (unless forcing refresh)
@@ -215,7 +235,7 @@ export function AssistantPanel() {
       const cached = getCachedContent();
       if (cached && cached.date === todayStr && cached.eventCount === todayEvents.length) {
         // Already have valid cached content, no need to regenerate
-        if (!content) {
+        if (!contentRef.current) {
           setContent(cached.content);
         }
         setIsLoading(false);
@@ -223,56 +243,72 @@ export function AssistantPanel() {
       }
     }
     
+    // Mark as loading to prevent duplicate calls
+    isLoadingContentRef.current = true;
+    
     // Only show full loading state if we have NO content yet (initial load)
     // Otherwise, just show the refresh spinner
-    if (forceRefresh || content) {
+    if (forceRefresh || contentRef.current) {
       setIsRefreshing(true);
     } else {
       setIsLoading(true);
     }
     setError(null);
 
+    // Prepare event summaries for the API (already filtered for declined)
+    const eventSummaries: CalendarEventSummary[] = todayEvents.map((e) => ({
+      title: e.title,
+      startTime: formatEventTime(e.startTime),
+      endTime: e.endTime ? formatEventTime(e.endTime) : null,
+      allDay: e.allDay,
+      eventType: e.eventType || null,
+      meetingLink: e.meetingLink || null,
+    }));
+
+    const input = {
+      date: todayStr,
+      events: eventSummaries,
+    };
+
+    const agentId = `assistant-${Date.now()}`;
+
     try {
-      // Prepare event summaries for the API (already filtered for declined)
-      const eventSummaries: CalendarEventSummary[] = todayEvents.map((e) => ({
-        title: e.title,
-        startTime: formatEventTime(e.startTime),
-        endTime: e.endTime ? formatEventTime(e.endTime) : null,
-        allDay: e.allDay,
-        eventType: e.eventType || null,
-        meetingLink: e.meetingLink || null,
-      }));
-
-      const input = {
-        date: todayStr,
-        events: eventSummaries,
-      };
-
-      let result: AssistantContentResponse;
-      try {
-        // Try AI-powered content first
-        result = await generateAssistantContent(input);
-      } catch {
-        // Fallback to non-AI content
-        console.log("[Assistant] AI generation failed, using fallback");
-        result = await getAssistantFallback(input);
-      }
-      
-      // Cache the result
-      setCachedContent(todayStr, result, todayEvents.length);
-      setContent(result);
+      // Queue the assistant content generation as a background task
+      await queueTask(
+        {
+          id: agentId,
+          type: "assistant",
+          description: "Generating daily summary",
+        },
+        async () => {
+          let result: AssistantContentResponse;
+          try {
+            // Try AI-powered content first
+            result = await generateAssistantContent(input);
+          } catch {
+            // Fallback to non-AI content
+            console.log("[Assistant] AI generation failed, using fallback");
+            result = await getAssistantFallback(input);
+          }
+          
+          // Cache the result
+          setCachedContent(todayStr, result, todayEvents.length);
+          setContent(result);
+        }
+      );
     } catch (err) {
       // Only set error if we have no content to show
-      if (!content) {
+      if (!contentRef.current) {
         setError(String(err));
       } else {
         console.error("[Assistant] Background refresh failed:", err);
       }
     } finally {
+      isLoadingContentRef.current = false;
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [todayEvents, content]);
+  }, [todayEvents, queueTask]);
 
   // Load content on mount
   useEffect(() => {

@@ -1,22 +1,38 @@
 //! Tauri commands for chat operations
 //!
 //! Provides conversation management and chat functionality with streaming support.
+//! Uses the unified streaming agent for tool-calling capabilities.
 
 use crate::ai::{
     build_context, create_client, format_system_prompt, load_ai_config,
     resolve_citations, extract_note_references, DEFAULT_SYSTEM_PROMPT,
-    llm::{ChatMessage as LlmChatMessage, ChatRequest, StreamEvent},
+    llm::{ChatMessage as LlmChatMessage, ChatRequest},
+    run_streaming_agent, UnifiedToolExecutor,
+    tools::{get_unified_agent_tools, AgentConfig},
 };
 use crate::db::generate_title_from_message;
 use crate::db::{self};
 use crate::models::{
     ChatResponse, ChatStreamEvent, Conversation, ConversationWithMessages,
     CreateConversationInput, Message, MessageMetadata, MessageRole, SendMessageInput,
-    TokenUsage, UpdateConversationInput,
+    TokenUsage, ToolCallRecord, UpdateConversationInput,
 };
 use crate::{ActiveStreams, AppPool};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::watch;
+
+/// Load agent configuration from the database
+fn load_agent_config_from_db(pool: &crate::db::connection::DbPool) -> AgentConfig {
+    let conn = match pool.get() {
+        Ok(c) => c,
+        Err(_) => return AgentConfig::default(),
+    };
+    
+    match db::settings::get_setting(&conn, "agent_config") {
+        Ok(Some(json_str)) => serde_json::from_str(&json_str).unwrap_or_default(),
+        _ => AgentConfig::default(),
+    }
+}
 
 // ============================================================================
 // Conversation Management
@@ -158,8 +174,8 @@ pub async fn get_conversation_messages(
 /// This command:
 /// 1. Creates or retrieves the conversation
 /// 2. Builds RAG context from attached notes and semantic search
-/// 3. Sends the message to the LLM via the configured provider
-/// 4. Streams the response back to the frontend
+/// 3. Uses the streaming agent with tools for intelligent responses
+/// 4. Streams the response back to the frontend (including tool calls)
 /// 5. Saves both user and assistant messages to the database
 #[tauri::command]
 pub async fn send_chat_message(
@@ -169,10 +185,10 @@ pub async fn send_chat_message(
     input: SendMessageInput,
 ) -> Result<ChatResponse, String> {
     // 1. Get or create conversation, save user message (sync db operations)
-    let (conversation, user_message, history, system_prompt_base, model, provider, is_new_conversation) = {
+    let (conversation, user_message, history, system_prompt_base, model, provider, agent_config, is_new_conversation) = {
         let pool_guard = pool.0.read().unwrap();
-        let pool = pool_guard.as_ref().ok_or("Database not initialized")?;
-        let conn = pool.get().map_err(|e| format!("Database error: {}", e))?;
+        let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+        let conn = db_pool.get().map_err(|e| format!("Database error: {}", e))?;
         
         let (conversation, is_new) = if let Some(ref conv_id) = input.conversation_id {
             let conv = db::get_conversation(&conn, conv_id)
@@ -222,7 +238,10 @@ pub async fn send_chat_message(
         let ai_config = load_ai_config(&conn)?;
         let (model, provider) = get_chat_model_and_provider(&ai_config)?;
         
-        (conversation, user_message, history, system_prompt_base, model, provider, is_new)
+        // Load agent config for tools
+        let agent_config = load_agent_config_from_db(db_pool);
+        
+        (conversation, user_message, history, system_prompt_base, model, provider, agent_config, is_new)
     };
 
     // 2. Build RAG context (this does async embedding work internally)
@@ -239,13 +258,10 @@ pub async fn send_chat_message(
     .await
     .map_err(|e| format!("Failed to build context: {}", e))?;
 
-    // 3. Format system prompt with context
+    // 3. Format system prompt with RAG context
     let system_prompt = format_system_prompt(&system_prompt_base, &rag_context);
 
-    // 4. Create LLM client for the provider
-    let llm_client = create_client(&provider).map_err(|e| format!("Failed to create LLM client: {}", e))?;
-
-    // 5. Build chat request with messages
+    // 4. Build chat messages for the streaming agent
     let mut llm_messages = vec![LlmChatMessage::system(&system_prompt)];
 
     for (role, content) in history {
@@ -259,108 +275,108 @@ pub async fn send_chat_message(
 
     llm_messages.push(LlmChatMessage::user(&input.content));
 
-    let chat_request = ChatRequest {
-        model: model.clone(),
-        messages: llm_messages,
-        max_tokens: None, // Let the model decide, avoid compatibility issues
-        temperature: None,
-        tools: None,
-        tool_choice: None,
-        enable_reasoning: false,
-        reasoning_effort: None,
-        thinking_budget: None,
-    };
+    // 5. Get tools for chat (exclude write_content - it's for inline assistant cursor insertion)
+    // Chat agent uses append_content_to_note to write to specific notes by ID
+    let tools = get_unified_agent_tools(&agent_config, false);
+    
+    // Convert to LLM tool definitions
+    let llm_tools: Vec<crate::ai::llm::ToolDefinition> = tools
+        .iter()
+        .map(|t| crate::ai::llm::ToolDefinition {
+            tool_type: t.tool_type.clone(),
+            function: crate::ai::llm::FunctionDefinition {
+                name: t.function.name.clone(),
+                description: t.function.description.clone(),
+                parameters: t.function.parameters.clone(),
+            },
+        })
+        .collect();
 
-    // 6. Start streaming request
-    let mut rx = llm_client.chat_stream(chat_request).await
-        .map_err(|e| format!("Failed to start stream: {}", e))?;
+    // 6. Create the unified tool executor with app handle for event emission
+    let executor = UnifiedToolExecutor::with_app_handle(pool_clone.clone(), provider.clone(), agent_config, app.clone());
 
-    // 7. Process streaming response - use session_id if provided, fallback to conversation id
+    // 7. Use session_id if provided, fallback to conversation id
     let stream_key = input
         .session_id
         .clone()
         .unwrap_or_else(|| conversation.id.clone());
-    let event_name = format!("chat-stream-{}", stream_key);
-    let mut full_content = String::new();
-    let mut was_cancelled = false;
 
-    // Create cancellation channel and register in active streams
+    // 8. Create cancellation channel and register in ActiveStreams
     let (cancel_tx, cancel_rx) = watch::channel(false);
     {
         let mut streams = active_streams.0.write().map_err(|e| format!("Lock error: {}", e))?;
         streams.insert(stream_key.clone(), cancel_tx);
     }
+    log::debug!("[Chat] Registered cancellation channel for session: {}", stream_key);
 
-    // Process stream events from LlmClient
-    while let Some(event) = rx.recv().await {
-        // Check for cancellation
-        if *cancel_rx.borrow() {
-            log::info!("Stream cancelled by user for session: {}", stream_key);
-            was_cancelled = true;
-            break;
-        }
-
-        match event {
-            StreamEvent::Content { delta } => {
-                full_content.push_str(&delta);
-                let _ = app.emit(
-                    &event_name,
-                    ChatStreamEvent::Chunk {
-                        content: delta,
-                    },
-                );
-            }
-            StreamEvent::Thinking { delta } => {
-                let _ = app.emit(
-                    &event_name,
-                    ChatStreamEvent::Thinking {
-                        content: delta,
-                    },
-                );
-            }
-            StreamEvent::Error { message } => {
-                log::warn!("Stream error: {}", message);
-                let _ = app.emit(
-                    &event_name,
-                    ChatStreamEvent::Error {
-                        message,
-                    },
-                );
-            }
-            StreamEvent::Done { .. } => {
-                break;
-            }
-            _ => {} // Handle other events like ToolCallStart, ToolCallDelta if needed
-        }
-    }
-
-    // Clean up active stream
+    // 9. Run the streaming agent with tools
+    log::info!(
+        "[Chat] Running streaming agent with {} tools for session {}",
+        llm_tools.len(),
+        stream_key
+    );
+    
+    let agent_result = run_streaming_agent(
+        &app,
+        &stream_key,
+        &provider,
+        &model,
+        llm_messages,
+        llm_tools,
+        &executor,
+        10, // max iterations
+        Some(cancel_rx),
+    )
+    .await;
+    
+    // 10. Clean up cancellation channel
     {
         let mut streams = active_streams.0.write().map_err(|e| format!("Lock error: {}", e))?;
         streams.remove(&stream_key);
     }
+    log::debug!("[Chat] Removed cancellation channel for session: {}", stream_key);
+    
+    let agent_result = agent_result.map_err(|e| format!("Agent error: {}", e))?;
 
-    // If cancelled and no content was generated, add a note
-    if was_cancelled && full_content.is_empty() {
-        full_content = "[Generation stopped by user]".to_string();
-    } else if was_cancelled {
-        full_content.push_str("\n\n[Generation stopped by user]");
-    }
+    let full_content = agent_result.content;
+    let thinking_content = agent_result.thinking_content;
+    let tool_calls_made = agent_result.tool_calls;
 
-    // 10. Extract citations from response
+    // 11. Extract citations from response
     let references = extract_note_references(&full_content);
     let citations = resolve_citations(&references, &rag_context);
 
-    // 11. Save assistant message with metadata (sync db operation)
+    // 12. Convert tool calls to the format for message metadata (full content, no truncation)
+    let tool_call_records: Vec<ToolCallRecord> = tool_calls_made
+        .iter()
+        .map(|tc| ToolCallRecord {
+            tool: tc.tool_name.clone(),
+            success: !tc.result.starts_with("Error:"),
+            preview: Some(tc.result.clone()),
+        })
+        .collect();
+
+    // Log tool calls being saved for debugging
+    if !tool_call_records.is_empty() {
+        log::info!(
+            "[Chat] Saving {} tool calls to message metadata: {:?}",
+            tool_call_records.len(),
+            tool_call_records.iter().map(|tc| &tc.tool).collect::<Vec<_>>()
+        );
+    }
+
+    // 13. Save assistant message with metadata (sync db operation)
     let (assistant_message, updated_conversation) = {
         let pool_guard = pool.0.read().unwrap();
-        let pool = pool_guard.as_ref().ok_or("Database not initialized")?;
-        let conn = pool.get().map_err(|e| format!("Database error: {}", e))?;
+        let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+        let conn = db_pool.get().map_err(|e| format!("Database error: {}", e))?;
         
         let metadata = MessageMetadata {
             citations: citations.clone(),
             model: Some(model.clone()),
             usage: None,
+            tool_calls: tool_call_records,
+            thinking_content: if thinking_content.is_empty() { None } else { Some(thinking_content) },
         };
 
         let assistant_message = db::create_message(
@@ -380,6 +396,7 @@ pub async fn send_chat_message(
     };
 
     // Emit completion event
+    let event_name = format!("chat-stream-{}", stream_key);
     let _ = app.emit(
         &event_name,
         ChatStreamEvent::Complete {
@@ -393,8 +410,8 @@ pub async fn send_chat_message(
             Ok(title) => {
                 // Update the conversation with the AI-generated title
                 let pool_guard = pool.0.read().unwrap();
-                if let Some(pool) = pool_guard.as_ref() {
-                    if let Ok(conn) = pool.get() {
+                if let Some(db_pool) = pool_guard.as_ref() {
+                    if let Ok(conn) = db_pool.get() {
                         db::update_conversation(&conn, &updated_conversation.id, Some(&title), None)
                             .unwrap_or(updated_conversation.clone())
                     } else {
@@ -409,8 +426,8 @@ pub async fn send_chat_message(
                 // Fall back to truncated message as title
                 let fallback_title = generate_title_from_message(&user_message.content, 50);
                 let pool_guard = pool.0.read().unwrap();
-                if let Some(pool) = pool_guard.as_ref() {
-                    if let Ok(conn) = pool.get() {
+                if let Some(db_pool) = pool_guard.as_ref() {
+                    if let Ok(conn) = db_pool.get() {
                         db::update_conversation(&conn, &updated_conversation.id, Some(&fallback_title), None)
                             .unwrap_or(updated_conversation.clone())
                     } else {
@@ -552,6 +569,8 @@ pub async fn send_chat_message_sync(
         citations,
         model: Some(model.clone()),
         usage,
+        tool_calls: vec![],
+        thinking_content: None,
     };
 
     // Save assistant message (sync db operation)
@@ -625,10 +644,10 @@ pub async fn edit_message_and_regenerate(
     new_content: String,
 ) -> Result<ChatResponse, String> {
     // 1. Get the original message and verify it's a user message
-    let (conversation, history_before) = {
+    let (conversation, history_before, agent_config) = {
         let pool_guard = pool.0.read().unwrap();
-        let pool = pool_guard.as_ref().ok_or("Database not initialized")?;
-        let conn = pool.get().map_err(|e| format!("Database error: {}", e))?;
+        let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+        let conn = db_pool.get().map_err(|e| format!("Database error: {}", e))?;
         
         let message = db::get_message(&conn, &message_id)
             .map_err(|e| format!("Database error: {}", e))?
@@ -656,14 +675,17 @@ pub async fn edit_message_and_regenerate(
         db::delete_messages_from(&conn, &conversation.id, &message_id)
             .map_err(|e| format!("Failed to delete messages: {}", e))?;
         
-        (conversation, history_before)
+        // Load agent config for tools
+        let agent_config = load_agent_config_from_db(db_pool);
+        
+        (conversation, history_before, agent_config)
     };
 
     // 2. Create the new user message
     let user_message = {
         let pool_guard = pool.0.read().unwrap();
-        let pool = pool_guard.as_ref().ok_or("Database not initialized")?;
-        let conn = pool.get().map_err(|e| format!("Database error: {}", e))?;
+        let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+        let conn = db_pool.get().map_err(|e| format!("Database error: {}", e))?;
         db::create_message(
             &conn,
             &conversation.id,
@@ -675,6 +697,8 @@ pub async fn edit_message_and_regenerate(
     };
 
     // 3. Build RAG context for the new message
+    // Use auto_retrieve_count = 0 to match regular chat behavior
+    // Agent should use tools to access notes instead of auto-retrieve
     let pool_clone = {
         let pool_guard = pool.0.read().unwrap();
         pool_guard.as_ref().ok_or("Database not initialized")?.clone()
@@ -683,7 +707,7 @@ pub async fn edit_message_and_regenerate(
         &pool_clone,
         &new_content,
         vec![], // No explicit context for edited messages
-        5,      // Auto-retrieve some context
+        0,      // Agent should use tools to access notes instead of auto-retrieve
     )
     .await
     .map_err(|e| format!("Failed to build context: {}", e))?;
@@ -691,8 +715,8 @@ pub async fn edit_message_and_regenerate(
     // 4. Get model, provider, and format system prompt
     let (system_prompt, model, provider) = {
         let pool_guard = pool.0.read().unwrap();
-        let pool = pool_guard.as_ref().ok_or("Database not initialized")?;
-        let conn = pool.get().map_err(|e| format!("Database error: {}", e))?;
+        let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+        let conn = db_pool.get().map_err(|e| format!("Database error: {}", e))?;
         
         let base_prompt = conversation
             .system_prompt
@@ -706,10 +730,7 @@ pub async fn edit_message_and_regenerate(
         (system_prompt, model, provider)
     };
 
-    // 5. Create LLM client
-    let llm_client = create_client(&provider).map_err(|e| format!("Failed to create LLM client: {}", e))?;
-
-    // 6. Build messages
+    // 5. Build messages for streaming agent
     let mut llm_messages = vec![LlmChatMessage::system(&system_prompt)];
 
     for (role, content) in history_before {
@@ -723,104 +744,103 @@ pub async fn edit_message_and_regenerate(
 
     llm_messages.push(LlmChatMessage::user(&new_content));
 
-    let chat_request = ChatRequest {
-        model: model.clone(),
-        messages: llm_messages,
-        max_tokens: None, // Let the model decide, avoid compatibility issues
-        temperature: None,
-        tools: None,
-        tool_choice: None,
-        enable_reasoning: false,
-        reasoning_effort: None,
-        thinking_budget: None,
-    };
+    // 6. Get tools for chat (exclude write_content - it's for inline assistant cursor insertion)
+    // Chat agent uses append_content_to_note to write to specific notes by ID
+    let tools = get_unified_agent_tools(&agent_config, false);
+    
+    // Convert to LLM tool definitions
+    let llm_tools: Vec<crate::ai::llm::ToolDefinition> = tools
+        .iter()
+        .map(|t| crate::ai::llm::ToolDefinition {
+            tool_type: t.tool_type.clone(),
+            function: crate::ai::llm::FunctionDefinition {
+                name: t.function.name.clone(),
+                description: t.function.description.clone(),
+                parameters: t.function.parameters.clone(),
+            },
+        })
+        .collect();
 
-    // 7. Start streaming request
-    let mut rx = llm_client.chat_stream(chat_request).await
-        .map_err(|e| format!("Failed to start stream: {}", e))?;
+    // 7. Create the unified tool executor with app handle for event emission
+    let executor = UnifiedToolExecutor::with_app_handle(pool_clone.clone(), provider.clone(), agent_config, app.clone());
 
-    // 8. Process streaming response
+    // 8. Create cancellation channel and register in ActiveStreams
     let stream_key = conversation.id.clone();
-    let event_name = format!("chat-stream-{}", stream_key);
-    let mut full_content = String::new();
-    let mut was_cancelled = false;
-
-    // Create cancellation channel and register in active streams
     let (cancel_tx, cancel_rx) = watch::channel(false);
     {
         let mut streams = active_streams.0.write().map_err(|e| format!("Lock error: {}", e))?;
         streams.insert(stream_key.clone(), cancel_tx);
     }
-
-    // Process stream events from LlmClient
-    while let Some(event) = rx.recv().await {
-        // Check for cancellation
-        if *cancel_rx.borrow() {
-            log::info!("Stream cancelled by user for session: {}", stream_key);
-            was_cancelled = true;
-            break;
-        }
-
-        match event {
-            StreamEvent::Content { delta } => {
-                full_content.push_str(&delta);
-                let _ = app.emit(
-                    &event_name,
-                    ChatStreamEvent::Chunk {
-                        content: delta,
-                    },
-                );
-            }
-            StreamEvent::Thinking { delta } => {
-                let _ = app.emit(
-                    &event_name,
-                    ChatStreamEvent::Thinking {
-                        content: delta,
-                    },
-                );
-            }
-            StreamEvent::Error { message } => {
-                log::warn!("Stream error: {}", message);
-                let _ = app.emit(
-                    &event_name,
-                    ChatStreamEvent::Error {
-                        message,
-                    },
-                );
-            }
-            StreamEvent::Done { .. } => {
-                break;
-            }
-            _ => {} // Handle other events like ToolCallStart, ToolCallDelta if needed
-        }
-    }
-
-    // Clean up active stream
+    log::debug!("[Chat] Registered cancellation channel for edit session: {}", stream_key);
+    
+    // 9. Run the streaming agent with tools
+    log::info!(
+        "[Chat] Running streaming agent for edit with {} tools for session {}",
+        llm_tools.len(),
+        stream_key
+    );
+    
+    let agent_result = run_streaming_agent(
+        &app,
+        &stream_key,
+        &provider,
+        &model,
+        llm_messages,
+        llm_tools,
+        &executor,
+        10, // max iterations
+        Some(cancel_rx),
+    )
+    .await;
+    
+    // 10. Clean up cancellation channel
     {
         let mut streams = active_streams.0.write().map_err(|e| format!("Lock error: {}", e))?;
         streams.remove(&stream_key);
     }
+    log::debug!("[Chat] Removed cancellation channel for edit session: {}", stream_key);
+    
+    let agent_result = agent_result.map_err(|e| format!("Agent error: {}", e))?;
 
-    // If cancelled and no content was generated, add a note
-    if was_cancelled && full_content.is_empty() {
-        full_content = "[Generation stopped by user]".to_string();
-    } else if was_cancelled {
-        full_content.push_str("\n\n[Generation stopped by user]");
-    }
+    let full_content = agent_result.content;
+    let thinking_content = agent_result.thinking_content;
+    let tool_calls_made = agent_result.tool_calls;
 
-    // 8. Extract citations and save assistant message
+    // 11. Extract citations from response
     let references = extract_note_references(&full_content);
     let citations = resolve_citations(&references, &rag_context);
 
+    // 12. Convert tool calls to the format for message metadata (full content, no truncation)
+    let tool_call_records: Vec<ToolCallRecord> = tool_calls_made
+        .iter()
+        .map(|tc| ToolCallRecord {
+            tool: tc.tool_name.clone(),
+            success: !tc.result.starts_with("Error:"),
+            preview: Some(tc.result.clone()),
+        })
+        .collect();
+
+    // Log tool calls being saved for debugging
+    if !tool_call_records.is_empty() {
+        log::info!(
+            "[Chat] Saving {} tool calls to edited message metadata: {:?}",
+            tool_call_records.len(),
+            tool_call_records.iter().map(|tc| &tc.tool).collect::<Vec<_>>()
+        );
+    }
+
+    // 13. Save assistant message
     let (assistant_message, updated_conversation) = {
         let pool_guard = pool.0.read().unwrap();
-        let pool = pool_guard.as_ref().ok_or("Database not initialized")?;
-        let conn = pool.get().map_err(|e| format!("Database error: {}", e))?;
+        let db_pool = pool_guard.as_ref().ok_or("Database not initialized")?;
+        let conn = db_pool.get().map_err(|e| format!("Database error: {}", e))?;
         
         let metadata = MessageMetadata {
             citations: citations.clone(),
             model: Some(model),
             usage: None,
+            tool_calls: tool_call_records,
+            thinking_content: if thinking_content.is_empty() { None } else { Some(thinking_content) },
         };
 
         let assistant_message = db::create_message(
@@ -840,6 +860,7 @@ pub async fn edit_message_and_regenerate(
     };
 
     // Emit completion event
+    let event_name = format!("chat-stream-{}", stream_key);
     let _ = app.emit(
         &event_name,
         ChatStreamEvent::Complete {

@@ -5,42 +5,65 @@
 /** Web search provider options */
 export type WebSearchProvider = "none" | "brave" | "serper" | "tavily";
 
-/** Image provider options */
-export type ImageProvider = "none" | "unsplash" | "dallE" | "stableDiffusion";
-
-/** Diagram format options */
-export type DiagramFormat = "mermaid" | "excalidraw";
-
 /** Web search configuration */
 export interface WebSearchConfig {
   provider: WebSearchProvider;
   apiKey?: string;
 }
 
-/** Image configuration */
-export interface ImageConfig {
-  provider: ImageProvider;
-  unsplashAccessKey?: string;
-  allowGeneration: boolean;
+/** Read/Write permission for a data source */
+export interface RWPermission {
+  /** Can read/search this source */
+  read: boolean;
+  /** Can write/create/modify this source */
+  write: boolean;
 }
 
-/** Diagram configuration */
-export interface DiagramConfig {
-  defaultFormat: DiagramFormat;
+/** Configuration for data sources the agent can access */
+export interface SourceConfig {
+  // =========================================================================
+  // Sources with read + write permissions
+  // =========================================================================
+  
+  /** Notes: read (search, read, links, related, recent) / write (create_note, append_content_to_note) */
+  notes: RWPermission;
+  /** Tags: read (get tags, search by tag) / write (add/remove tags - future) */
+  tags: RWPermission;
+  /** Calendar: read (get events) / write (create events) */
+  calendar: RWPermission;
+  /** Daily Notes: read (get daily note) / write (create/modify - future) */
+  dailyNotes: RWPermission;
+  /** Folders: read (list, get notes) / write (create, move - future) */
+  folders: RWPermission;
+  
+  // =========================================================================
+  // Read-only sources
+  // =========================================================================
+  
+  /** URL Attachments: search, read content (read-only) */
+  urlAttachments: boolean;
+  /** Web Search: search web (requires API key config) (read-only) */
+  webSearch: boolean;
+}
+
+/** Configuration for agent capabilities (non-source-specific) */
+export interface CapabilityConfig {
+  /** Document Export: PDF, DOCX, XLSX, document builder */
+  documentExport: boolean;
 }
 
 /** Full agent configuration stored in backend */
 export interface AgentConfig {
-  /** Whether the inline assistant is enabled */
+  /** Whether agents are enabled globally */
   enabled: boolean;
-  /** List of enabled tool names */
+  /** List of enabled tool names (kept for backwards compatibility) */
   enabledTools: string[];
   /** Web search configuration */
   webSearch: WebSearchConfig;
-  /** Image configuration */
-  image: ImageConfig;
-  /** Diagram configuration */
-  diagram: DiagramConfig;
+  /** Data source toggles */
+  sources: SourceConfig;
+  /** Capability toggles */
+  capabilities: CapabilityConfig;
 }
 
 /** Information about an available tool */
@@ -110,18 +133,37 @@ export interface AppendContentEvent {
 /** Agent type for tracking running agents */
 export type AgentType = "tagging" | "inline" | "embedding" | "summarization" | "research";
 
+/** Default RWPermission - full read/write access */
+export const DEFAULT_RW_PERMISSION: RWPermission = {
+  read: true,
+  write: true,
+};
+
+/** Default source configuration - full access for RW sources, enabled for read-only */
+export const DEFAULT_SOURCE_CONFIG: SourceConfig = {
+  // Sources with read + write - default to full access
+  notes: { read: true, write: true },
+  tags: { read: true, write: true },
+  calendar: { read: true, write: true },
+  dailyNotes: { read: true, write: true },
+  folders: { read: true, write: true },
+  // Read-only sources
+  urlAttachments: true,
+  webSearch: false, // Requires API key configuration
+};
+
+/** Default capability configuration */
+export const DEFAULT_CAPABILITY_CONFIG: CapabilityConfig = {
+  documentExport: true,
+};
+
 /** Default agent configuration */
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   enabled: true,
-  enabledTools: ["search_notes", "write_content", "create_mermaid"],
+  enabledTools: ["search_notes", "append_content_to_note", "create_mermaid"],
   webSearch: {
     provider: "none",
   },
-  image: {
-    provider: "none",
-    allowGeneration: false,
-  },
-  diagram: {
-    defaultFormat: "mermaid",
-  },
+  sources: DEFAULT_SOURCE_CONFIG,
+  capabilities: DEFAULT_CAPABILITY_CONFIG,
 };

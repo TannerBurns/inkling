@@ -132,97 +132,95 @@ export const useExportStore = create<ExportState>((set, get) => ({
     customInstructions?: string
   ) => {
     const agentId = `export-${format}-${Date.now()}`;
-    const { startAgent, stopAgent, updateAgentDescription } = useAgentActivityStore.getState();
+    const { queueTask, updateAgentDescription } = useAgentActivityStore.getState();
     
     const noteCount = noteIds.length;
     const formatLabel = format.toUpperCase();
     
-    // Start tracking in background agents
-    startAgent({
-      id: agentId,
-      type: 'export',
-      description: `${formatLabel}: ${title} (${noteCount} note${noteCount > 1 ? 's' : ''})`,
-    });
-    
-    let unlisten: UnlistenFn | null = null;
-    let iterationCount = 0;
-    
-    // Set up progress event listener for export-specific events
-    const setupProgressListener = async () => {
-      unlisten = await listen<ExportProgressEvent>('export-agent-progress', (event) => {
-        const progress = event.payload;
-        
-        // Update background task UI based on progress events
-        switch (progress.type) {
-          case 'readingNote':
-            iterationCount++;
-            updateAgentDescription(agentId, `${formatLabel}: Reading notes...`);
-            break;
-          case 'creatingDocument':
-            updateAgentDescription(agentId, `${formatLabel}: Creating document...`);
-            break;
-          case 'addingContent':
-            iterationCount++;
-            updateAgentDescription(agentId, `${formatLabel}: Adding content (${iterationCount} sections)...`);
-            break;
-          case 'saving':
-            updateAgentDescription(agentId, `${formatLabel}: Saving...`);
-            break;
-          case 'error':
-            console.error('[ExportStore] Export error:', progress.message);
-            break;
-        }
-      });
-    };
-    
-    // Start listening for progress
-    setupProgressListener().catch(() => {});
-    
-    // Run the export in the background (don't await)
-    invoke<ExportAgentResult>('run_export_agent_cmd', {
-      input: {
-        noteIds,
-        title,
-        format,
-        customInstructions: customInstructions ?? null,
+    // Queue the export task
+    queueTask(
+      {
+        id: agentId,
+        type: 'export',
+        description: `${formatLabel}: ${title} (${noteCount} note${noteCount > 1 ? 's' : ''})`,
       },
-    })
-      .then((result) => {
-        // Check if export was actually created
-        const success = result.exportFilename !== null;
+      async () => {
+        let unlisten: UnlistenFn | null = null;
+        let iterationCount = 0;
         
-        // Add to completed exports for notification
-        get().addCompletedExport({
-          id: agentId,
-          filename: result.exportFilename || title,
-          format,
-          success,
-          error: success ? undefined : 'Export agent did not save document',
-          timestamp: Date.now(),
-        });
-        
-        // Reload exports list
-        get().loadExports();
-      })
-      .catch((error) => {
-        // Add error notification
-        get().addCompletedExport({
-          id: agentId,
-          filename: title,
-          format,
-          success: false,
-          error: String(error),
-          timestamp: Date.now(),
-        });
-      })
-      .finally(() => {
-        // Clean up event listener
-        if (unlisten) {
-          unlisten();
+        try {
+          // Set up progress event listener for export-specific events
+          unlisten = await listen<ExportProgressEvent>('export-agent-progress', (event) => {
+            const progress = event.payload;
+            
+            // Update background task UI based on progress events
+            switch (progress.type) {
+              case 'readingNote':
+                iterationCount++;
+                updateAgentDescription(agentId, `${formatLabel}: Reading notes...`);
+                break;
+              case 'creatingDocument':
+                updateAgentDescription(agentId, `${formatLabel}: Creating document...`);
+                break;
+              case 'addingContent':
+                iterationCount++;
+                updateAgentDescription(agentId, `${formatLabel}: Adding content (${iterationCount} sections)...`);
+                break;
+              case 'saving':
+                updateAgentDescription(agentId, `${formatLabel}: Saving...`);
+                break;
+              case 'error':
+                console.error('[ExportStore] Export error:', progress.message);
+                break;
+            }
+          });
+          
+          // Run the export
+          const result = await invoke<ExportAgentResult>('run_export_agent_cmd', {
+            input: {
+              noteIds,
+              title,
+              format,
+              customInstructions: customInstructions ?? null,
+            },
+          });
+          
+          // Check if export was actually created
+          const success = result.exportFilename !== null;
+          
+          // Add to completed exports for notification
+          get().addCompletedExport({
+            id: agentId,
+            filename: result.exportFilename || title,
+            format,
+            success,
+            error: success ? undefined : 'Export agent did not save document',
+            timestamp: Date.now(),
+          });
+          
+          // Reload exports list
+          await get().loadExports();
+        } catch (error) {
+          // Add error notification
+          get().addCompletedExport({
+            id: agentId,
+            filename: title,
+            format,
+            success: false,
+            error: String(error),
+            timestamp: Date.now(),
+          });
+          throw error;
+        } finally {
+          // Clean up event listener
+          if (unlisten) {
+            unlisten();
+          }
         }
-        // Stop tracking in background agents
-        stopAgent(agentId);
-      });
+      }
+    ).catch((error) => {
+      console.error('[ExportStore] Export task failed:', error);
+    });
   },
   
   // Legacy export functions - now run in background
@@ -245,42 +243,45 @@ export const useExportStore = create<ExportState>((set, get) => ({
   exportContentToXlsx: (content: string, title: string) => {
     // XLSX still uses direct export since it's table-specific
     const agentId = `export-xlsx-${Date.now()}`;
-    const { startAgent, stopAgent } = useAgentActivityStore.getState();
+    const { queueTask } = useAgentActivityStore.getState();
     
-    startAgent({
-      id: agentId,
-      type: 'export',
-      description: `XLSX: ${title}`,
+    queueTask(
+      {
+        id: agentId,
+        type: 'export',
+        description: `XLSX: ${title}`,
+      },
+      async () => {
+        try {
+          await invoke<ExportResult>('export_content_to_xlsx', {
+            content,
+            title,
+          });
+          
+          get().addCompletedExport({
+            id: agentId,
+            filename: title,
+            format: 'xlsx',
+            success: true,
+            timestamp: Date.now(),
+          });
+          await get().loadExports();
+        } catch (error) {
+          console.error('Failed to export to XLSX:', error);
+          get().addCompletedExport({
+            id: agentId,
+            filename: title,
+            format: 'xlsx',
+            success: false,
+            error: String(error),
+            timestamp: Date.now(),
+          });
+          throw error;
+        }
+      }
+    ).catch((error) => {
+      console.error('[ExportStore] XLSX export task failed:', error);
     });
-    
-    invoke<ExportResult>('export_content_to_xlsx', {
-      content,
-      title,
-    })
-      .then(() => {
-        get().addCompletedExport({
-          id: agentId,
-          filename: title,
-          format: 'xlsx',
-          success: true,
-          timestamp: Date.now(),
-        });
-        get().loadExports();
-      })
-      .catch((error) => {
-        console.error('Failed to export to XLSX:', error);
-        get().addCompletedExport({
-          id: agentId,
-          filename: title,
-          format: 'xlsx',
-          success: false,
-          error: String(error),
-          timestamp: Date.now(),
-        });
-      })
-      .finally(() => {
-        stopAgent(agentId);
-      });
   },
   
   exportNotesToPptx: (noteIds: string[], title: string) => {

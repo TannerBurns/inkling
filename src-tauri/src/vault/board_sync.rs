@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum BoardSyncError {
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),

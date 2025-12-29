@@ -84,8 +84,8 @@ fn extract_title_and_content(body: &str) -> (String, String) {
     
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        if trimmed.starts_with("# ") {
-            let title = trimmed[2..].trim().to_string();
+        if let Some(title_part) = trimmed.strip_prefix("# ") {
+            let title = title_part.trim().to_string();
             let remaining: Vec<&str> = lines[i + 1..].to_vec();
             let content = remaining.join("\n").trim().to_string();
             return (title, content);
@@ -137,6 +137,7 @@ pub fn serialize_note(
 }
 
 /// Write a note to a markdown file
+#[allow(clippy::too_many_arguments)]
 pub fn write_note_file(
     path: &Path,
     id: &str,

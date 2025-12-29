@@ -198,7 +198,7 @@ fn count_markdown_files(dir: &Path) -> Result<usize, VaultError> {
             
             if path.is_dir() {
                 count += count_markdown_files(&path)?;
-            } else if path.extension().map_or(false, |ext| ext == "md") {
+            } else if path.extension().is_some_and(|ext| ext == "md") {
                 count += 1;
             }
         }

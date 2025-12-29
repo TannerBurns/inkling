@@ -171,7 +171,7 @@ pub fn update_folder(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Folder not found: {}", id))?;
     
-    let is_name_changing = name.as_ref().map_or(false, |n| n != &old_folder.name);
+    let is_name_changing = name.as_ref().is_some_and(|n| n != &old_folder.name);
     let is_parent_changing = parent_id != old_folder.parent_id;
     
     let input = UpdateFolderInput { name, parent_id };

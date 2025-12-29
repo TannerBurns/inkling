@@ -11,6 +11,7 @@ import {
 import { marked } from "marked";
 import type { AgentProgress } from "../../../types/agent";
 import * as agentsApi from "../../../lib/agents";
+import { useAgentActivityStore } from "../../../stores/agentActivityStore";
 
 // Configure marked for safe HTML output
 marked.setOptions({
@@ -49,7 +50,7 @@ function getAIBlockAttrs(attrs: Record<string, unknown>): AIBlockAttrs {
  * AIBlock extension for TipTap
  * Enables inline AI assistant with input/processing/preview/accepted states
  */
-export const AIBlock = Node.create<AIBlockOptions>({
+export const aiBlock = Node.create<AIBlockOptions>({
   name: "aiBlock",
 
   group: "block",
@@ -176,6 +177,7 @@ function AIBlockComponent({ node, updateAttributes, deleteNode, editor }: NodeVi
   const [inputValue, setInputValue] = useState(attrs.request || "");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const { queueTask } = useAgentActivityStore();
 
   // Focus input on mount if in input state
   useEffect(() => {
@@ -209,84 +211,99 @@ function AIBlockComponent({ node, updateAttributes, deleteNode, editor }: NodeVi
       error: "",
     });
 
-    // Set up progress listener BEFORE executing
+    // Queue the inline agent execution
     try {
-      console.log("[AIBlock] Setting up progress listener...");
-      const unlisten = await agentsApi.listenForAgentProgress(
-        executionId,
-        (progress: AgentProgress) => {
-          console.log("[AIBlock] Progress event:", JSON.stringify(progress));
-          try {
-            switch (progress.type) {
-              case "started":
-                progressMessages = [...progressMessages, `Agent started: ${progress.agentName || "Inline Assistant"}`];
-                updateAttributes({ progress: progressMessages });
-                break;
-              case "toolCalling":
-                progressMessages = [...progressMessages, `Using ${progress.toolName || "tool"}...`];
-                updateAttributes({ progress: progressMessages });
-                break;
-              case "toolResult":
-                progressMessages = [...progressMessages, `${progress.success ? "✓" : "✗"} ${progress.toolName || "tool"}`];
-                updateAttributes({ progress: progressMessages });
-                break;
-              case "thinking":
-                progressMessages = [...progressMessages, progress.message || "Thinking..."];
-                updateAttributes({ progress: progressMessages });
-                break;
-              case "completed":
-                console.log("[AIBlock] Agent completed:", progress.result);
-                // Content will be inserted by the main executeInlineAgent result handler
-                // Just update progress to show completion
-                progressMessages = [...progressMessages, "✓ Complete"];
-                updateAttributes({ progress: progressMessages });
-                break;
-              case "error":
-                console.error("[AIBlock] Agent error:", progress.message);
-                updateAttributes({
-                  state: "error",
-                  error: progress.message || "Unknown error",
-                });
-                break;
-              case "cancelled":
-                console.log("[AIBlock] Agent cancelled");
-                updateAttributes({
-                  state: "input",
-                  progress: [],
-                });
-                break;
+      await queueTask(
+        {
+          id: executionId,
+          type: "inline",
+          description: inputValue.length > 50 ? inputValue.slice(0, 50) + "..." : inputValue,
+        },
+        async () => {
+          console.log("[AIBlock] Setting up progress listener...");
+          const unlisten = await agentsApi.listenForAgentProgress(
+            executionId,
+            (progress: AgentProgress) => {
+              console.log("[AIBlock] Progress event:", JSON.stringify(progress));
+              try {
+                switch (progress.type) {
+                  case "started":
+                    progressMessages = [...progressMessages, `Agent started: ${progress.agentName || "Inline Assistant"}`];
+                    updateAttributes({ progress: progressMessages });
+                    break;
+                  case "toolCalling":
+                    progressMessages = [...progressMessages, `Using ${progress.toolName || "tool"}...`];
+                    updateAttributes({ progress: progressMessages });
+                    break;
+                  case "toolResult":
+                    progressMessages = [...progressMessages, `${progress.success ? "✓" : "✗"} ${progress.toolName || "tool"}`];
+                    updateAttributes({ progress: progressMessages });
+                    break;
+                  case "thinking":
+                    progressMessages = [...progressMessages, progress.message || "Thinking..."];
+                    updateAttributes({ progress: progressMessages });
+                    break;
+                  case "completed":
+                    console.log("[AIBlock] Agent completed:", progress.result);
+                    // Content will be inserted by the main executeInlineAgent result handler
+                    // Just update progress to show completion
+                    progressMessages = [...progressMessages, "✓ Complete"];
+                    updateAttributes({ progress: progressMessages });
+                    break;
+                  case "error":
+                    console.error("[AIBlock] Agent error:", progress.message);
+                    updateAttributes({
+                      state: "error",
+                      error: progress.message || "Unknown error",
+                    });
+                    break;
+                  case "cancelled":
+                    console.log("[AIBlock] Agent cancelled");
+                    updateAttributes({
+                      state: "input",
+                      progress: [],
+                    });
+                    break;
+                }
+              } catch (e) {
+                console.error("[AIBlock] Error handling progress:", e);
+              }
             }
-          } catch (e) {
-            console.error("[AIBlock] Error handling progress:", e);
+          );
+          unlistenRef.current = unlisten;
+
+          // Execute the agent with the current note content as context
+          console.log("[AIBlock] Calling execute_inline_agent...");
+          const noteContext = editor?.getText() ?? undefined;
+          const result = await agentsApi.executeInlineAgent(
+            executionId,
+            inputValue,
+            noteContext
+          );
+          console.log("[AIBlock] Agent result:", result);
+
+          // Clean up progress listener
+          if (unlistenRef.current) {
+            unlistenRef.current();
+            unlistenRef.current = null;
+          }
+
+          // Automatically insert content and remove the AI block
+          if (result.content) {
+            const htmlContent = await marked.parse(result.content);
+            deleteNode();
+            if (editor) {
+              editor.chain().focus().insertContent(htmlContent).run();
+            }
+          } else {
+            // No content returned - show error
+            updateAttributes({
+              state: "error",
+              error: "Agent completed but returned no content",
+            });
           }
         }
       );
-      unlistenRef.current = unlisten;
-
-      // Execute the agent with the current note content as context
-      console.log("[AIBlock] Calling execute_inline_agent...");
-      const noteContext = editor?.getText() ?? undefined;
-      const result = await agentsApi.executeInlineAgent(
-        executionId,
-        inputValue,
-        noteContext
-      );
-      console.log("[AIBlock] Agent result:", result);
-
-      // Automatically insert content and remove the AI block
-      if (result.content) {
-        const htmlContent = await marked.parse(result.content);
-        deleteNode();
-        if (editor) {
-          editor.chain().focus().insertContent(htmlContent).run();
-        }
-      } else {
-        // No content returned - show error
-        updateAttributes({
-          state: "error",
-          error: "Agent completed but returned no content",
-        });
-      }
     } catch (err) {
       console.error("[AIBlock] Error executing agent:", err);
       updateAttributes({
@@ -300,7 +317,7 @@ function AIBlockComponent({ node, updateAttributes, deleteNode, editor }: NodeVi
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inputValue, attrs.progress, updateAttributes]);
+  }, [inputValue, attrs.progress, updateAttributes, queueTask]);
 
   const handleCancel = useCallback(() => {
     // TODO: Implement cancellation via agentsApi.cancelAgentExecution
@@ -478,4 +495,4 @@ function AIBlockComponent({ node, updateAttributes, deleteNode, editor }: NodeVi
   );
 }
 
-export default AIBlock;
+export default aiBlock;

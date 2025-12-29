@@ -254,6 +254,24 @@ pub struct MessageMetadata {
     pub model: Option<String>,
     /// Token usage statistics
     pub usage: Option<TokenUsage>,
+    /// Tool calls made during this response
+    #[serde(default)]
+    pub tool_calls: Vec<ToolCallRecord>,
+    /// Thinking/reasoning content from the AI (for display in history)
+    #[serde(default)]
+    pub thinking_content: Option<String>,
+}
+
+/// A record of a tool call made during message generation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallRecord {
+    /// Name of the tool that was called
+    pub tool: String,
+    /// Whether the tool call succeeded
+    pub success: bool,
+    /// Optional preview/summary of the result
+    pub preview: Option<String>,
 }
 
 /// A citation to a note in an AI response
@@ -316,7 +334,7 @@ pub struct SendMessageInput {
 }
 
 fn default_auto_retrieve_count() -> usize {
-    5
+    0 // Agent should use tools to access notes instead of auto-retrieve
 }
 
 /// Response from sending a chat message
@@ -377,6 +395,19 @@ pub enum ChatStreamEvent {
     /// A chunk of the response content
     #[serde(rename = "chunk")]
     Chunk { content: String },
+    /// A tool call has started
+    #[serde(rename = "tool_start")]
+    ToolStart {
+        tool: String,
+        args: serde_json::Value,
+    },
+    /// A tool call has completed
+    #[serde(rename = "tool_result")]
+    ToolResult {
+        tool: String,
+        success: bool,
+        preview: Option<String>,
+    },
     /// The complete response with metadata
     #[serde(rename = "complete")]
     Complete { message: Message },

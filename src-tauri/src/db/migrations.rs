@@ -32,6 +32,8 @@ pub fn run_migrations(conn: &Connection) -> Result<(), MigrationError> {
         ("010_calendar_response_status", MIGRATION_010_CALENDAR_RESPONSE_STATUS),
         ("011_calendar_attendees", MIGRATION_011_CALENDAR_ATTENDEES),
         ("012_exports", MIGRATION_012_EXPORTS),
+        ("013_url_attachments", MIGRATION_013_URL_ATTACHMENTS),
+        ("014_url_metadata", MIGRATION_014_URL_METADATA),
     ];
 
     for (name, sql) in migrations {
@@ -294,6 +296,47 @@ CREATE INDEX idx_exports_format ON exports(format);
 CREATE INDEX idx_exports_created_at ON exports(created_at);
 "#;
 
+const MIGRATION_013_URL_ATTACHMENTS: &str = r#"
+-- URL attachments linked to notes
+-- Stores fetched web content for embedding and chat context
+CREATE TABLE url_attachments (
+    id TEXT PRIMARY KEY,
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    title TEXT,
+    description TEXT,
+    content TEXT,              -- Extracted main content
+    links TEXT,                -- JSON array of outbound links
+    fetched_at DATETIME,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'fetching', 'indexed', 'error')),
+    error_message TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(note_id, url)       -- Prevent duplicate URLs per note
+);
+
+-- Separate embeddings for URL content (enables URL-specific similarity search)
+CREATE TABLE url_embeddings (
+    url_attachment_id TEXT PRIMARY KEY REFERENCES url_attachments(id) ON DELETE CASCADE,
+    embedding BLOB NOT NULL,
+    dimension INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for URL attachment queries
+CREATE INDEX idx_url_attachments_note_id ON url_attachments(note_id);
+CREATE INDEX idx_url_attachments_status ON url_attachments(status);
+CREATE INDEX idx_url_attachments_url ON url_attachments(url);
+"#;
+
+const MIGRATION_014_URL_METADATA: &str = r#"
+-- Add metadata columns to url_attachments for preview cards
+ALTER TABLE url_attachments ADD COLUMN image_url TEXT DEFAULT NULL;
+ALTER TABLE url_attachments ADD COLUMN favicon_url TEXT DEFAULT NULL;
+ALTER TABLE url_attachments ADD COLUMN site_name TEXT DEFAULT NULL;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,6 +371,8 @@ mod tests {
         assert!(tables.contains(&"board_cards".to_string()));
         assert!(tables.contains(&"calendar_events".to_string()));
         assert!(tables.contains(&"exports".to_string()));
+        assert!(tables.contains(&"url_attachments".to_string()));
+        assert!(tables.contains(&"url_embeddings".to_string()));
     }
 
     #[test]

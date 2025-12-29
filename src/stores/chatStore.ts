@@ -4,12 +4,15 @@ import type {
   ConversationPreview,
   Message,
   ContextItem,
+  FolderContextItem,
   SendMessageInput,
   ChatResponse,
+  ToolCallRecord,
 } from "../types/chat";
 import * as chatApi from "../lib/chat";
 import { useNoteStore } from "./noteStore";
 import { useEditorGroupStore } from "./editorGroupStore";
+import { useFolderStore } from "./folderStore";
 
 /** Mode for the right sidebar */
 export type RightSidebarMode = "assistant" | "notes" | "chat";
@@ -32,10 +35,23 @@ interface ChatState {
   // Streaming state
   isStreaming: boolean;
   streamingContent: string;
+  thinkingContent: string;
   currentSessionId: string | null;
+  
+  // Tool execution state (for agentic chat)
+  activeToolCalls: Array<{ tool: string; args: Record<string, unknown> }>;
+  toolResults: ToolCallRecord[];
+  /** Whether tools have been used in this streaming session (for routing chunks) */
+  hasUsedTools: boolean;
+  /** Whether we're in the final response phase (after all tools complete) */
+  inFinalResponsePhase: boolean;
 
   // Context state
   attachedContext: ContextItem[];
+  attachedFolders: FolderContextItem[];
+  
+  // Pending badge insertion (for programmatic badge insertion into ChatInput)
+  pendingBadges: Array<{ type: "note" | "folder"; id: string; name: string; noteCount?: number }>;
 
   // Loading/error state
   isLoading: boolean;
@@ -68,16 +84,31 @@ interface ChatState {
   editMessage: (messageId: string, newContent: string) => Promise<ChatResponse | null>;
 
   // Actions - Context
-  addContext: (item: ContextItem) => void;
+  addContext: (item: ContextItem, addBadge?: boolean) => void;
   removeContext: (noteId: string) => void;
   clearContext: () => void;
   setContext: (items: ContextItem[]) => void;
+  
+  // Actions - Folder Context
+  addFolderContext: (item: FolderContextItem, addBadge?: boolean) => void;
+  removeFolderContext: (folderId: string) => void;
+  clearFolderContext: () => void;
+  
+  // Actions - Pending Badges (for programmatic insertion)
+  clearPendingBadges: () => void;
 
   // Actions - Streaming
   appendStreamContent: (content: string) => void;
   clearStreamContent: () => void;
+  appendThinkingContent: (content: string) => void;
+  clearThinkingContent: () => void;
   setStreaming: (streaming: boolean) => void;
   stopGeneration: () => Promise<void>;
+  
+  // Actions - Tool execution
+  addToolCall: (tool: string, args: Record<string, unknown>) => void;
+  addToolResult: (tool: string, success: boolean, preview?: string) => void;
+  clearToolState: () => void;
 
   // Actions - Utility
   clearError: () => void;
@@ -102,8 +133,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   openTabIds: [],
   isStreaming: false,
   streamingContent: "",
+  thinkingContent: "",
   currentSessionId: null,
+  activeToolCalls: [],
+  toolResults: [],
+  hasUsedTools: false,
+  inFinalResponsePhase: true,
   attachedContext: [],
+  attachedFolders: [],
+  pendingBadges: [],
   isLoading: false,
   error: null,
 
@@ -276,7 +314,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // Message actions
   sendMessage: async (content) => {
-    const { currentConversationId, messages, attachedContext } = get();
+    const { currentConversationId, messages, attachedContext, attachedFolders } = get();
     
     // Get open note tabs from editorGroupStore (the actual tabs, not noteStore.openNoteIds which is stale)
     const { groups } = useEditorGroupStore.getState();
@@ -289,8 +327,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
     
-    // Get note details from noteStore
+    // Get note and folder details from stores
     const { notes } = useNoteStore.getState();
+    const { folders } = useFolderStore.getState();
+    
+    // Expand folders to their notes
+    const folderNoteContext: ContextItem[] = [];
+    for (const folderCtx of attachedFolders) {
+      // Find all notes in this folder (including nested folders)
+      const folderNoteIds = getNotesInFolder(folderCtx.folderId, notes, folders);
+      for (const noteId of folderNoteIds) {
+        const note = notes.find((n) => n.id === noteId);
+        if (note && !folderNoteContext.some((c) => c.noteId === note.id)) {
+          folderNoteContext.push({
+            noteId: note.id,
+            noteTitle: note.title,
+            isFullNote: true,
+          });
+        }
+      }
+    }
+    
     const tabContext: ContextItem[] = openNoteIds
       .map((id) => notes.find((n) => n.id === id))
       .filter((n): n is NonNullable<typeof n> => n !== undefined)
@@ -300,8 +357,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         isFullNote: true,
       }));
     
-    // Merge attached context (from @mentions) with open tab context, avoiding duplicates
-    const mergedContext = [...attachedContext];
+    // Merge all context: @mentions + folder expansions + open tabs, avoiding duplicates
+    const mergedContext = [...attachedContext, ...folderNoteContext];
     for (const item of tabContext) {
       if (!mergedContext.some((c) => c.noteId === item.noteId)) {
         mergedContext.push(item);
@@ -325,6 +382,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       isStreaming: true,
       streamingContent: "",
+      thinkingContent: "",
       currentSessionId: sessionId,
       error: null,
       messages: [...messages, optimisticUserMessage],
@@ -336,16 +394,53 @@ export const useChatStore = create<ChatState>((set, get) => ({
         conversationId: currentConversationId ?? undefined,
         sessionId,
         context: mergedContext, // Use @mentions + open tabs as context
-        autoRetrieveCount: 0, // Disable auto-retrieve
+        autoRetrieveCount: 0, // Agent should use tools to access notes instead of auto-retrieve
       };
       
-      // Clear attached context after sending
-      set({ attachedContext: [] });
+      // Clear attached context, folders, and tool state after sending
+      // Start with inFinalResponsePhase: false - assume thinking mode until we know otherwise
+      set({ attachedContext: [], attachedFolders: [], activeToolCalls: [], toolResults: [], hasUsedTools: false, inFinalResponsePhase: false });
 
       // Set up stream listener with session ID BEFORE sending
       const unlisten = await chatApi.listenToStream(sessionId, (event) => {
         if (event.type === "chunk") {
-          get().appendStreamContent(event.content);
+          // Route chunk based on tool phase:
+          // - If we're in final response phase (after all tools complete), append to streamingContent
+          // - Otherwise (before/during tools), append to thinkingContent
+          const state = get();
+          if (state.inFinalResponsePhase && state.hasUsedTools) {
+            // Only route to streamingContent if we've used tools and they're all complete
+            get().appendStreamContent(event.content);
+          } else if (state.hasUsedTools) {
+            // We're in tool phase, route to thinking
+            get().appendThinkingContent(event.content);
+          } else {
+            // No tools used yet - content goes to thinking (will be displayed appropriately)
+            get().appendThinkingContent(event.content);
+          }
+        } else if (event.type === "thinking") {
+          // Native thinking from models with reasoning - always goes to thinkingContent
+          get().appendThinkingContent(event.content);
+        } else if (event.type === "tool_start") {
+          // When a tool starts, we're in tool execution phase
+          // Move any existing streamingContent to thinkingContent (content between tool rounds)
+          const currentState = get();
+          if (currentState.streamingContent) {
+            set((s) => ({
+              thinkingContent: s.thinkingContent + s.streamingContent,
+              streamingContent: "",
+            }));
+          }
+          set({ hasUsedTools: true, inFinalResponsePhase: false });
+          get().addToolCall(event.tool, event.args);
+        } else if (event.type === "tool_result") {
+          get().addToolResult(event.tool, event.success, event.preview);
+          // After processing the result, check if all tools are done
+          // If so, we enter the final response phase
+          const state = get();
+          if (state.activeToolCalls.length === 0) {
+            set({ inFinalResponsePhase: true });
+          }
         } else if (event.type === "complete") {
           // Don't clear stream content yet - keep it visible until API returns
           // Just mark streaming as done so cursor stops blinking
@@ -407,12 +502,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
           updatedPreviews = [newPreview, ...state.conversationPreviews];
         }
 
+        // Only keep thinkingContent if tools were used (otherwise it's redundant with the message)
+        const keepThinking = state.hasUsedTools;
+        
         return {
           currentConversationId: response.conversation.id,
           messages: newMessages,
           isStreaming: false,
           streamingContent: "",
+          thinkingContent: keepThinking ? state.thinkingContent : "",
           currentSessionId: null,
+          hasUsedTools: false,
+          inFinalResponsePhase: true,
           openTabIds: newOpenTabIds,
           conversationPreviews: updatedPreviews,
         };
@@ -426,13 +527,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         error: String(error),
         isStreaming: false,
         currentSessionId: null,
+        hasUsedTools: false,
+        inFinalResponsePhase: true,
       }));
       return null;
     }
   },
 
   sendMessageSync: async (content) => {
-    const { currentConversationId, attachedContext } = get();
+    const { currentConversationId, attachedContext, attachedFolders } = get();
     
     // Get open note tabs from editorGroupStore (the actual tabs, not noteStore.openNoteIds which is stale)
     const { groups } = useEditorGroupStore.getState();
@@ -445,8 +548,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
     
-    // Get note details from noteStore
+    // Get note and folder details from stores
     const { notes } = useNoteStore.getState();
+    const { folders } = useFolderStore.getState();
+    
+    // Expand folders to their notes
+    const folderNoteContext: ContextItem[] = [];
+    for (const folderCtx of attachedFolders) {
+      const folderNoteIds = getNotesInFolder(folderCtx.folderId, notes, folders);
+      for (const noteId of folderNoteIds) {
+        const note = notes.find((n) => n.id === noteId);
+        if (note && !folderNoteContext.some((c) => c.noteId === note.id)) {
+          folderNoteContext.push({
+            noteId: note.id,
+            noteTitle: note.title,
+            isFullNote: true,
+          });
+        }
+      }
+    }
+    
     const tabContext: ContextItem[] = openNoteIds
       .map((id) => notes.find((n) => n.id === id))
       .filter((n): n is NonNullable<typeof n> => n !== undefined)
@@ -456,15 +577,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         isFullNote: true,
       }));
     
-    // Merge attached context (from @mentions) with open tab context, avoiding duplicates
-    const mergedContext = [...attachedContext];
+    // Merge all context: @mentions + folder expansions + open tabs, avoiding duplicates
+    const mergedContext = [...attachedContext, ...folderNoteContext];
     for (const item of tabContext) {
       if (!mergedContext.some((c) => c.noteId === item.noteId)) {
         mergedContext.push(item);
       }
     }
 
-    set({ isLoading: true, error: null, attachedContext: [] });
+    set({ isLoading: true, error: null, attachedContext: [], attachedFolders: [] });
 
     try {
       const input: SendMessageInput = {
@@ -559,18 +680,56 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
 
     // Immediately show the edited message (remove original and subsequent, add optimistic)
+    // Also clear tool state for fresh tool progress display
     set({
       isStreaming: true,
       streamingContent: "",
+      thinkingContent: "",
       error: null,
       messages: [...messages.slice(0, editIndex), optimisticUserMessage],
+      activeToolCalls: [],
+      toolResults: [],
+      hasUsedTools: false,
+      inFinalResponsePhase: false, // Start in thinking mode
     });
 
     try {
       // Set up stream listener with conversation ID
       const unlisten = await chatApi.listenToStream(currentConversationId, (event) => {
         if (event.type === "chunk") {
-          get().appendStreamContent(event.content);
+          // Route chunk based on tool phase
+          const state = get();
+          if (state.inFinalResponsePhase && state.hasUsedTools) {
+            // Only route to streamingContent if we've used tools and they're all complete
+            get().appendStreamContent(event.content);
+          } else if (state.hasUsedTools) {
+            // We're in tool phase, route to thinking
+            get().appendThinkingContent(event.content);
+          } else {
+            // No tools used yet - content goes to thinking
+            get().appendThinkingContent(event.content);
+          }
+        } else if (event.type === "thinking") {
+          get().appendThinkingContent(event.content);
+        } else if (event.type === "tool_start") {
+          // When a tool starts, we're in tool execution phase
+          // Move any existing streamingContent to thinkingContent (content between tool rounds)
+          const currentState = get();
+          if (currentState.streamingContent) {
+            set((s) => ({
+              thinkingContent: s.thinkingContent + s.streamingContent,
+              streamingContent: "",
+            }));
+          }
+          set({ hasUsedTools: true, inFinalResponsePhase: false });
+          get().addToolCall(event.tool, event.args);
+        } else if (event.type === "tool_result") {
+          get().addToolResult(event.tool, event.success, event.preview);
+          // Check if all tools are done
+          const state = get();
+          if (state.activeToolCalls.length === 0) {
+            set({ inFinalResponsePhase: true });
+          }
         } else if (event.type === "complete") {
           // Keep content visible until API returns
           set({ isStreaming: false });
@@ -597,14 +756,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
         firstMessagePreview: newMessages.find((m) => m.role === "user")?.content.slice(0, 100) ?? null,
       };
 
-      set((state) => ({
-        messages: newMessages,
-        isStreaming: false,
-        streamingContent: "",
-        conversationPreviews: state.conversationPreviews.map((p) =>
-          p.conversation.id === response.conversation.id ? newPreview : p
-        ),
-      }));
+      set((state) => {
+        // Only keep thinkingContent if tools were used
+        const keepThinking = state.hasUsedTools;
+        
+        return {
+          messages: newMessages,
+          isStreaming: false,
+          streamingContent: "",
+          thinkingContent: keepThinking ? state.thinkingContent : "",
+          hasUsedTools: false,
+          inFinalResponsePhase: true,
+          conversationPreviews: state.conversationPreviews.map((p) =>
+            p.conversation.id === response.conversation.id ? newPreview : p
+          ),
+        };
+      });
 
       return response;
     } catch (error) {
@@ -613,19 +780,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages,
         error: String(error),
         isStreaming: false,
+        thinkingContent: "",
+        hasUsedTools: false,
+        inFinalResponsePhase: true,
       });
       return null;
     }
   },
 
   // Context actions
-  addContext: (item) => {
+  addContext: (item, addBadge = false) => {
     set((state) => {
       // Don't add duplicates
       if (state.attachedContext.some((c) => c.noteId === item.noteId)) {
         return state;
       }
-      return { attachedContext: [...state.attachedContext, item] };
+      const newState: Partial<typeof state> = { 
+        attachedContext: [...state.attachedContext, item] 
+      };
+      // Add pending badge if requested (for programmatic insertion from right-click)
+      if (addBadge) {
+        newState.pendingBadges = [
+          ...state.pendingBadges, 
+          { type: "note", id: item.noteId, name: item.noteTitle }
+        ];
+      }
+      return newState;
     });
   },
 
@@ -636,11 +816,47 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   clearContext: () => {
-    set({ attachedContext: [] });
+    set({ attachedContext: [], attachedFolders: [] });
   },
 
   setContext: (items) => {
     set({ attachedContext: items });
+  },
+
+  // Folder context actions
+  addFolderContext: (item, addBadge = false) => {
+    set((state) => {
+      // Don't add duplicates
+      if (state.attachedFolders.some((f) => f.folderId === item.folderId)) {
+        return state;
+      }
+      const newState: Partial<typeof state> = { 
+        attachedFolders: [...state.attachedFolders, item] 
+      };
+      // Add pending badge if requested (for programmatic insertion from right-click)
+      if (addBadge) {
+        newState.pendingBadges = [
+          ...state.pendingBadges, 
+          { type: "folder", id: item.folderId, name: item.folderName, noteCount: item.noteCount }
+        ];
+      }
+      return newState;
+    });
+  },
+
+  removeFolderContext: (folderId) => {
+    set((state) => ({
+      attachedFolders: state.attachedFolders.filter((f) => f.folderId !== folderId),
+    }));
+  },
+
+  clearFolderContext: () => {
+    set({ attachedFolders: [] });
+  },
+
+  // Pending badge actions
+  clearPendingBadges: () => {
+    set({ pendingBadges: [] });
   },
 
   // Streaming actions
@@ -652,6 +868,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   clearStreamContent: () => {
     set({ streamingContent: "" });
+  },
+
+  appendThinkingContent: (content) => {
+    set((state) => ({
+      thinkingContent: state.thinkingContent + content,
+    }));
+  },
+
+  clearThinkingContent: () => {
+    set({ thinkingContent: "" });
   },
 
   setStreaming: (streaming) => {
@@ -676,6 +902,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  // Tool execution actions
+  addToolCall: (tool, args) => {
+    set((state) => ({
+      activeToolCalls: [...state.activeToolCalls, { tool, args }],
+    }));
+  },
+
+  addToolResult: (tool, success, preview) => {
+    set((state) => ({
+      // Remove from active, add to results
+      activeToolCalls: state.activeToolCalls.filter((tc) => tc.tool !== tool),
+      toolResults: [...state.toolResults, { tool, success, preview }],
+    }));
+  },
+
+  clearToolState: () => {
+    set({ activeToolCalls: [], toolResults: [] });
+  },
+
   // Utility actions
   clearError: () => {
     set({ error: null });
@@ -686,13 +931,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
       currentConversationId: null,
       messages: [],
       attachedContext: [],
+      attachedFolders: [],
+      pendingBadges: [],
       streamingContent: "",
+      thinkingContent: "",
       isStreaming: false,
       currentSessionId: null,
+      activeToolCalls: [],
+      toolResults: [],
+      hasUsedTools: false,
+      inFinalResponsePhase: true,
       error: null,
     });
   },
 }));
+
+// Helper to get all notes in a folder (including nested subfolders recursively)
+import type { Note, Folder } from "../types/note";
+
+function getNotesInFolder(folderId: string, notes: Note[], folders: Folder[]): string[] {
+  const noteIds: string[] = [];
+  
+  // Get direct notes in this folder
+  for (const note of notes) {
+    if (note.folderId === folderId && !note.isDeleted) {
+      noteIds.push(note.id);
+    }
+  }
+  
+  // Get notes from nested subfolders recursively
+  const subfolders = folders.filter((f) => f.parentId === folderId);
+  for (const subfolder of subfolders) {
+    const subNotes = getNotesInFolder(subfolder.id, notes, folders);
+    noteIds.push(...subNotes);
+  }
+  
+  return noteIds;
+}
 
 // Selectors
 export const useCurrentConversation = () => {

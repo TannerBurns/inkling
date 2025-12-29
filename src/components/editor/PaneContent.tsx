@@ -64,7 +64,10 @@ export function PaneContent({ groupId, activeTab }: PaneContentProps) {
 
   // Render based on tab type
   if (activeTab.type === "note") {
-    return <NoteEditorContent noteId={activeTab.id} />;
+    // Use key to force React to fully unmount/remount when switching notes
+    // This ensures the old tiptap editor is properly destroyed before creating a new one,
+    // preventing duplicate extension warnings
+    return <NoteEditorContent key={activeTab.id} noteId={activeTab.id} />;
   }
 
   if (activeTab.type === "board") {

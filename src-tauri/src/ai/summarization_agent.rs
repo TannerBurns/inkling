@@ -136,6 +136,7 @@ pub fn get_summarization_tools() -> Vec<ToolDefinition> {
 /// * `content_type` - Type of content ("selection" or "attachment")
 /// * `vault_path` - Path to the vault for resolving attachments
 /// * `cancellation_token` - Optional cancellation token
+#[allow(clippy::too_many_arguments)]
 pub async fn run_summarization_agent(
     app_handle: &AppHandle,
     execution_id: &str,

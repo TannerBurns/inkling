@@ -118,7 +118,7 @@ pub struct FunctionDefinition {
 
 
 /// Request for a chat completion
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ChatRequest {
     /// Model identifier (without provider prefix)
     pub model: String,
@@ -140,21 +140,6 @@ pub struct ChatRequest {
     pub thinking_budget: Option<u32>,
 }
 
-impl Default for ChatRequest {
-    fn default() -> Self {
-        Self {
-            model: String::new(),
-            messages: Vec::new(),
-            tools: None,
-            tool_choice: None,
-            max_tokens: None,
-            temperature: None,
-            enable_reasoning: false,
-            reasoning_effort: None,
-            thinking_budget: None,
-        }
-    }
-}
 
 /// Response from a chat completion
 #[derive(Debug, Clone, Serialize, Deserialize)]

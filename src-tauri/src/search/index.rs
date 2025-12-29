@@ -10,6 +10,7 @@ use thiserror::Error;
 use super::schema::{build_schema, FIELD_CONTENT, FIELD_ID, FIELD_TITLE};
 
 #[derive(Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum SearchError {
     #[error("Tantivy error: {0}")]
     TantivyError(#[from] tantivy::TantivyError),

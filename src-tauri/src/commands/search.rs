@@ -1,10 +1,11 @@
 //! Tauri commands for search operations (fulltext, semantic, hybrid)
 
-use crate::ai::{generate_embedding_direct, load_ai_config, EmbeddingModelInfo};
-use crate::db::{self, connection::DbPool};
+use crate::ai::{extract_attachments_text, generate_embedding_direct, load_ai_config, EmbeddingModelInfo};
+use crate::db::{self, connection::DbPool, url_attachments};
 use crate::search::SearchIndex;
 use crate::{AppPool, AppSearchIndex};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::sync::Arc;
 use tauri::State;
 
@@ -163,8 +164,11 @@ async fn search_semantic(
     log::info!("[search_semantic] Found {} similar notes", similar.len());
 
     let mut search_results = Vec::with_capacity(similar.len());
+    let mut seen_note_ids: HashSet<String> = HashSet::new();
+    
     for result in similar {
         if let Ok(Some(note)) = db::notes::get_note(&conn, &result.note_id) {
+            seen_note_ids.insert(note.id.clone());
             let snippet = note.content.as_ref().map(|c| {
                 // For semantic search, just take the beginning
                 truncate_content(c, 150)
@@ -179,6 +183,42 @@ async fn search_semantic(
             });
         }
     }
+
+    // Also search URL embeddings and include their parent notes
+    let url_similar = url_attachments::search_similar_urls(&conn, &query_embedding.embedding, limit, None)
+        .unwrap_or_else(|e| {
+            log::warn!("[search_semantic] URL similarity search error: {}", e);
+            Vec::new()
+        });
+
+    log::info!("[search_semantic] Found {} similar URL attachments", url_similar.len());
+
+    for url_result in url_similar {
+        // Skip if we already have this note in results
+        if seen_note_ids.contains(&url_result.note_id) {
+            continue;
+        }
+        
+        if let Ok(Some(note)) = db::notes::get_note(&conn, &url_result.note_id) {
+            seen_note_ids.insert(note.id.clone());
+            
+            // Create snippet mentioning the matched URL
+            let url_title = url_result.title.unwrap_or_else(|| url_result.url.clone());
+            let snippet = Some(format!("Matched via linked URL: {}", url_title));
+
+            search_results.push(SearchResult {
+                note_id: note.id,
+                title: note.title,
+                snippet,
+                score: url_result.score * 0.9, // Slightly lower score for URL matches
+                mode: "semantic".to_string(),
+            });
+        }
+    }
+
+    // Re-sort by score after adding URL results
+    search_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    search_results.truncate(limit);
 
     log::info!(
         "[search_semantic] Returning {} search results",
@@ -367,10 +407,12 @@ pub async fn detect_embedding_dimension(
 pub struct ReindexResult {
     pub embedded_count: u32,
     pub total_notes: u32,
+    pub url_embedded_count: u32,
+    pub total_urls: u32,
     pub errors: Vec<String>,
 }
 
-/// Trigger re-embedding of all notes
+/// Trigger re-embedding of all notes and URL attachments
 #[tauri::command]
 pub async fn reindex_embeddings(
     pool: State<'_, AppPool>,
@@ -381,16 +423,24 @@ pub async fn reindex_embeddings(
         pool_guard.as_ref().ok_or("Database not initialized")?.clone()
     };
     
-    // Do initial sync db work
-    let (notes, embedding_model, provider_url, api_key) = {
+    // Do initial sync db work - get notes and URL attachments
+    let (notes, indexed_urls, embedding_model, provider_url, api_key) = {
         let conn = pool_clone.get().map_err(|e| format!("Database error: {}", e))?;
         
-        // Delete all existing embeddings
+        // Delete all existing note embeddings
         db::embeddings::delete_all_embeddings(&conn)
             .map_err(|e| format!("Failed to delete embeddings: {}", e))?;
         
+        // Delete all existing URL embeddings
+        url_attachments::delete_all_url_embeddings(&conn)
+            .map_err(|e| format!("Failed to delete URL embeddings: {}", e))?;
+        
         // Get all notes
         let notes = db::notes::get_all_notes(&conn)
+            .map_err(|e| format!("Database error: {}", e))?;
+        
+        // Get all indexed URL attachments (those with content)
+        let indexed_urls = url_attachments::get_all_indexed_url_attachments(&conn)
             .map_err(|e| format!("Database error: {}", e))?;
         
         // Get embedding config
@@ -408,22 +458,33 @@ pub async fn reindex_embeddings(
         let provider_url = embedding_provider.and_then(|p| p.base_url.clone());
         let api_key = embedding_provider.and_then(|p| p.api_key.clone());
         
-        (notes, config.embedding.full_model_id(), provider_url, api_key)
+        (notes, indexed_urls, config.embedding.full_model_id(), provider_url, api_key)
     };
     
     let total_notes = notes.len() as u32;
+    let total_urls = indexed_urls.len() as u32;
     log::info!("[Reindex] Using model: {}, provider_url: {:?}, has API key: {}", embedding_model, provider_url, api_key.is_some());
+    log::info!("[Reindex] Processing {} notes and {} URL attachments", total_notes, total_urls);
     
     let mut embedded_count = 0u32;
+    let mut url_embedded_count = 0u32;
     let mut errors: Vec<String> = Vec::new();
     
+    // Embed notes
     for note in notes {
-        // Prepare text to embed
-        let text_to_embed = format!(
-            "{}\n\n{}",
-            note.title,
-            note.content.unwrap_or_default()
-        );
+        // Extract text from attachments referenced in the note
+        let attachment_text = extract_attachments_text(&note.content, Some(10000));
+        
+        // Prepare text to embed (title + content + attachment text)
+        let base_content = note.content.unwrap_or_default();
+        let text_to_embed = if attachment_text.is_empty() {
+            format!("{}\n\n{}", note.title, base_content)
+        } else {
+            format!(
+                "{}\n\n{}\n\n--- Attached Document Content ---\n{}",
+                note.title, base_content, attachment_text
+            )
+        };
         
         if text_to_embed.trim().is_empty() {
             continue;
@@ -461,9 +522,71 @@ pub async fn reindex_embeddings(
         }
     }
     
+    // Embed URL attachments
+    for url_attachment in indexed_urls {
+        let content = match url_attachment.content {
+            Some(c) => c,
+            None => continue,
+        };
+        
+        // Build text to embed: title + description + content
+        let mut parts = Vec::new();
+        if let Some(ref title) = url_attachment.title {
+            parts.push(title.clone());
+        }
+        if let Some(ref desc) = url_attachment.description {
+            parts.push(desc.clone());
+        }
+        // Truncate content for embedding (max 8000 chars)
+        let truncated_content = if content.len() > 8000 {
+            content[..8000].to_string()
+        } else {
+            content
+        };
+        parts.push(truncated_content);
+        
+        let text_to_embed = parts.join("\n\n");
+        
+        if text_to_embed.trim().is_empty() {
+            continue;
+        }
+        
+        // Generate embedding
+        match generate_embedding_direct(&text_to_embed, &embedding_model, provider_url.as_deref(), api_key.as_deref()).await {
+            Ok(result) => {
+                let conn = pool_clone.get().map_err(|e| format!("Database error: {}", e))?;
+                if let Err(e) = url_attachments::store_url_embedding(
+                    &conn,
+                    &url_attachment.id,
+                    &result.embedding,
+                    &embedding_model,
+                ) {
+                    let err_msg = format!("Failed to store URL embedding: {}", e);
+                    log::warn!("{}", err_msg);
+                    if errors.len() < 5 {
+                        errors.push(err_msg);
+                    }
+                } else {
+                    url_embedded_count += 1;
+                }
+            }
+            Err(e) => {
+                let err_msg = format!("URL embedding failed for {}: {}", url_attachment.url, e);
+                log::warn!("{}", err_msg);
+                if errors.len() < 5 {
+                    errors.push(err_msg);
+                }
+            }
+        }
+    }
+    
+    log::info!("[Reindex] Complete: {} notes, {} URLs embedded", embedded_count, url_embedded_count);
+    
     Ok(ReindexResult {
         embedded_count,
         total_notes,
+        url_embedded_count,
+        total_urls,
         errors,
     })
 }
@@ -542,12 +665,19 @@ async fn embed_note_internal(
         return Ok(false);
     }
     
-    // Prepare text to embed
-    let text_to_embed = format!(
-        "{}\n\n{}",
-        note.title,
-        note.content.unwrap_or_default()
-    );
+    // Extract text from attachments referenced in the note
+    let attachment_text = extract_attachments_text(&note.content, Some(10000));
+    
+    // Prepare text to embed (title + content + attachment text)
+    let base_content = note.content.unwrap_or_default();
+    let text_to_embed = if attachment_text.is_empty() {
+        format!("{}\n\n{}", note.title, base_content)
+    } else {
+        format!(
+            "{}\n\n{}\n\n--- Attached Document Content ---\n{}",
+            note.title, base_content, attachment_text
+        )
+    };
     
     if text_to_embed.trim().is_empty() {
         return Ok(false);

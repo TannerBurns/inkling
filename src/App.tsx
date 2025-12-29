@@ -8,13 +8,17 @@ import { DragOverlay } from "./components/shared/DragOverlay";
 import { ExportModal, ExportNotifications } from "./components/exports";
 import { CommandPalette } from "./components/command";
 import { VaultSetup } from "./components/setup/VaultSetup";
-import { useNoteStore } from "./stores/noteStore";
+import { useNoteStore, initNoteContentListener, cleanupNoteContentListener } from "./stores/noteStore";
 import { useFolderStore } from "./stores/folderStore";
 import { useChatStore } from "./stores/chatStore";
 import { useVaultStore } from "./stores/vaultStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useDailyNotesStore } from "./stores/dailyNotesStore";
 import { useActiveTab, useEditorGroupStore } from "./stores/editorGroupStore";
+import {
+  initUrlIndexingListener,
+  cleanupUrlIndexingListener,
+} from "./stores/urlAttachmentStore";
 import { useRelatedNotes } from "./hooks/useRelatedNotes";
 import { useBacklinks } from "./hooks/useBacklinks";
 import { Loader2 } from "lucide-react";
@@ -62,6 +66,22 @@ function App() {
       fetchFolders();
     }
   }, [isConfigured, fetchAllNotes, fetchFolders]);
+
+  // Initialize URL indexing event listener
+  useEffect(() => {
+    void initUrlIndexingListener();
+    return () => {
+      cleanupUrlIndexingListener();
+    };
+  }, []);
+
+  // Initialize note content update listener (for chat agent note writes)
+  useEffect(() => {
+    void initNoteContentListener();
+    return () => {
+      cleanupNoteContentListener();
+    };
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {

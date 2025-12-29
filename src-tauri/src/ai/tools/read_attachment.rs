@@ -194,7 +194,7 @@ fn extract_text_from_ooxml(xml: &str, text_tag: &str) -> Result<String, String> 
     let mut current_paragraph = String::new();
     
     // Get the local name part of the tag (after the colon)
-    let target_local_name = text_tag.split(':').last().unwrap_or(text_tag);
+    let target_local_name = text_tag.split(':').next_back().unwrap_or(text_tag);
 
     loop {
         match reader.read_event() {

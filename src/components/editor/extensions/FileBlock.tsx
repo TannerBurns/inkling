@@ -34,7 +34,7 @@ declare module "@tiptap/core" {
  * FileBlock extension for TipTap
  * Enables embedding file previews for PDFs, code files, text files, and office documents
  */
-export const FileBlock = Node.create<FileBlockOptions>({
+export const fileBlock = Node.create<FileBlockOptions>({
   name: "fileBlock",
 
   group: "block",
@@ -143,4 +143,4 @@ function FileBlockNodeView({ node }: NodeViewProps) {
   );
 }
 
-export default FileBlock;
+export default fileBlock;

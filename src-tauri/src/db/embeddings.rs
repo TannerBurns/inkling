@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn test_bytes_to_embedding() {
-        let original = vec![0.1f32, 0.2, 0.3, 0.4];
+        let original = [0.1f32, 0.2, 0.3, 0.4];
         let bytes: Vec<u8> = original.iter().flat_map(|f| f.to_le_bytes()).collect();
         
         let restored = bytes_to_embedding(&bytes).unwrap();

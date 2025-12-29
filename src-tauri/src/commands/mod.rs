@@ -13,6 +13,7 @@ pub mod links;
 pub mod notes;
 pub mod search;
 pub mod tags;
+pub mod urls;
 pub mod vault;
 
 pub use agents::*;
@@ -30,4 +31,5 @@ pub use links::*;
 pub use notes::*;
 pub use search::*;
 pub use tags::*;
+pub use urls::*;
 pub use vault::*;

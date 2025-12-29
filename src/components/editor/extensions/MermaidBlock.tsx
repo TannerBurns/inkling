@@ -249,7 +249,7 @@ function MermaidBlockComponent({ node, updateAttributes, selected }: NodeViewPro
   );
 }
 
-export const MermaidBlock = Node.create<MermaidBlockAttrs>({
+export const mermaidBlock = Node.create<MermaidBlockAttrs>({
   name: "mermaidBlock",
 
   group: "block",
@@ -323,4 +323,4 @@ export const MermaidBlock = Node.create<MermaidBlockAttrs>({
   },
 });
 
-export default MermaidBlock;
+export default mermaidBlock;

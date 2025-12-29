@@ -256,7 +256,7 @@ fn write_content_types<W: Write + Seek>(
     options: &FileOptions<'_, ()>,
     slide_count: usize,
 ) -> Result<(), ExportError> {
-    zip.start_file("[Content_Types].xml", options.clone())
+    zip.start_file("[Content_Types].xml", *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     let mut writer = Writer::new(Vec::new());
@@ -317,7 +317,7 @@ fn write_rels<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
     options: &FileOptions<'_, ()>,
 ) -> Result<(), ExportError> {
-    zip.start_file("_rels/.rels", options.clone())
+    zip.start_file("_rels/.rels", *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     let content = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -338,7 +338,7 @@ fn write_presentation_rels<W: Write + Seek>(
     options: &FileOptions<'_, ()>,
     slide_count: usize,
 ) -> Result<(), ExportError> {
-    zip.start_file("ppt/_rels/presentation.xml.rels", options.clone())
+    zip.start_file("ppt/_rels/presentation.xml.rels", *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     let mut writer = Writer::new(Vec::new());
@@ -386,7 +386,7 @@ fn write_presentation<W: Write + Seek>(
     options: &FileOptions<'_, ()>,
     slide_count: usize,
 ) -> Result<(), ExportError> {
-    zip.start_file("ppt/presentation.xml", options.clone())
+    zip.start_file("ppt/presentation.xml", *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     let mut slide_id_list = String::new();
@@ -422,7 +422,7 @@ fn write_slide<W: Write + Seek>(
     slide_num: usize,
     slide: &Slide,
 ) -> Result<(), ExportError> {
-    zip.start_file(format!("ppt/slides/slide{}.xml", slide_num), options.clone())
+    zip.start_file(format!("ppt/slides/slide{}.xml", slide_num), *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     // Build body text - ensure at least one paragraph for valid XML
@@ -516,7 +516,7 @@ fn write_slide_rels<W: Write + Seek>(
     options: &FileOptions<'_, ()>,
     slide_num: usize,
 ) -> Result<(), ExportError> {
-    zip.start_file(format!("ppt/slides/_rels/slide{}.xml.rels", slide_num), options.clone())
+    zip.start_file(format!("ppt/slides/_rels/slide{}.xml.rels", slide_num), *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     let content = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -534,7 +534,7 @@ fn write_slide_layout<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
     options: &FileOptions<'_, ()>,
 ) -> Result<(), ExportError> {
-    zip.start_file("ppt/slideLayouts/slideLayout1.xml", options.clone())
+    zip.start_file("ppt/slideLayouts/slideLayout1.xml", *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     let content = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -564,7 +564,7 @@ fn write_slide_master<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
     options: &FileOptions<'_, ()>,
 ) -> Result<(), ExportError> {
-    zip.start_file("ppt/slideMasters/slideMaster1.xml", options.clone())
+    zip.start_file("ppt/slideMasters/slideMaster1.xml", *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     let content = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -600,7 +600,7 @@ fn write_layout_rels<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
     options: &FileOptions<'_, ()>,
 ) -> Result<(), ExportError> {
-    zip.start_file("ppt/slideLayouts/_rels/slideLayout1.xml.rels", options.clone())
+    zip.start_file("ppt/slideLayouts/_rels/slideLayout1.xml.rels", *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     let content = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -618,7 +618,7 @@ fn write_master_rels<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
     options: &FileOptions<'_, ()>,
 ) -> Result<(), ExportError> {
-    zip.start_file("ppt/slideMasters/_rels/slideMaster1.xml.rels", options.clone())
+    zip.start_file("ppt/slideMasters/_rels/slideMaster1.xml.rels", *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     let content = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -637,7 +637,7 @@ fn write_theme<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
     options: &FileOptions<'_, ()>,
 ) -> Result<(), ExportError> {
-    zip.start_file("ppt/theme/theme1.xml", options.clone())
+    zip.start_file("ppt/theme/theme1.xml", *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     // A minimal theme with basic colors
@@ -706,7 +706,7 @@ fn write_app_xml<W: Write + Seek>(
     options: &FileOptions<'_, ()>,
     slide_count: usize,
 ) -> Result<(), ExportError> {
-    zip.start_file("docProps/app.xml", options.clone())
+    zip.start_file("docProps/app.xml", *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     let content = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -738,7 +738,7 @@ fn write_core_xml<W: Write + Seek>(
     options: &FileOptions<'_, ()>,
     title: &str,
 ) -> Result<(), ExportError> {
-    zip.start_file("docProps/core.xml", options.clone())
+    zip.start_file("docProps/core.xml", *options)
         .map_err(|e| ExportError::PptxError(e.to_string()))?;
 
     let now = Utc::now().format("%Y-%m-%dT%H:%M:%SZ");

@@ -21,6 +21,7 @@ static SQLITE_VEC_INIT: Once = Once::new();
 fn init_sqlite_vec() {
     SQLITE_VEC_INIT.call_once(|| {
         unsafe {
+            #[allow(clippy::missing_transmute_annotations)]
             sqlite3_auto_extension(Some(std::mem::transmute(sqlite3_vec_init as *const ())));
         }
         log::info!("sqlite-vec extension initialized");

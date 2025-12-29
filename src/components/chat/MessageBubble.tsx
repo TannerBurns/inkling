@@ -7,6 +7,8 @@ import type { Message } from "../../types/chat";
 import { formatMessageTime } from "../../lib/chat";
 import { NoteCitation } from "./NoteCitation";
 import { TextWithMentions } from "./NoteMention";
+import { ThinkingBlock } from "./ThinkingBlock";
+import { ToolProgress } from "./ToolProgress";
 import { useChatStore } from "../../stores/chatStore";
 
 interface MessageBubbleProps {
@@ -27,6 +29,8 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
 
   const isUser = message.role === "user";
   const citations = message.metadata?.citations ?? [];
+  const toolCalls = message.metadata?.toolCalls ?? [];
+  const thinkingContent = message.metadata?.thinkingContent ?? null;
   const canEdit = isUser && !isStreaming && !storeIsStreaming && !message.id.startsWith("temp-");
 
   // Auto-focus and resize textarea when editing
@@ -176,6 +180,20 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
             <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-current" />
           )}
         </div>
+
+        {/* Thinking content from historical messages (not shown for live streaming message) */}
+        {!isUser && thinkingContent && !isStreaming && message.id !== "streaming" && (
+          <div className="mt-2">
+            <ThinkingBlock content={thinkingContent} />
+          </div>
+        )}
+
+        {/* Tool calls summary (for assistant messages with tools) */}
+        {!isUser && toolCalls.length > 0 && (
+          <div className="mt-2">
+            <ToolProgress toolCalls={toolCalls} />
+          </div>
+        )}
 
         {/* Citations */}
         {citations.length > 0 && (

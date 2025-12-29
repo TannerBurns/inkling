@@ -1,7 +1,9 @@
-import { useState, useRef, KeyboardEvent, useCallback } from "react";
+import { useState, useRef, KeyboardEvent, useCallback, useMemo, useEffect } from "react";
 import { useChatStore } from "../../stores/chatStore";
 import { useNoteStore } from "../../stores/noteStore";
-import { createNoteContext } from "../../types/chat";
+import { useFolderStore } from "../../stores/folderStore";
+import { createNoteContext, createFolderContext } from "../../types/chat";
+import { parseMentions } from "./NoteMention";
 
 /**
  * Chat input with @ mention autocomplete and inline badges
@@ -13,19 +15,75 @@ export function ChatInput() {
   const [mentionStartOffset, setMentionStartOffset] = useState<number | null>(null);
   const inputRef = useRef<HTMLDivElement>(null);
 
-  const { sendMessage, addContext, isStreaming, isLoading, stopGeneration } = useChatStore();
+  const { 
+    sendMessage, 
+    addContext, 
+    addFolderContext, 
+    removeContext,
+    removeFolderContext,
+    attachedContext,
+    attachedFolders,
+    pendingBadges, 
+    clearPendingBadges, 
+    isStreaming, 
+    isLoading, 
+    stopGeneration 
+  } = useChatStore();
   const notes = useNoteStore((state) => state.notes);
+  const folders = useFolderStore((state) => state.folders);
 
-  // Filter notes based on mention query
-  const filteredNotes = mentionQuery
-    ? notes.filter(
-        (note) =>
-          note.title.toLowerCase().includes(mentionQuery.toLowerCase()) ||
-          note.content?.toLowerCase().includes(mentionQuery.toLowerCase())
-      )
-    : notes;
+  // Create mention result type
+  type MentionResult = 
+    | { type: "folder"; id: string; name: string; noteCount: number }
+    | { type: "note"; id: string; title: string; content?: string | null };
 
-  const mentionResults = filteredNotes.slice(0, 5);
+  // Filter and combine folders and notes based on mention query
+  const mentionResults: MentionResult[] = useMemo(() => {
+    const results: MentionResult[] = [];
+    const queryLower = mentionQuery.toLowerCase();
+    
+    // Filter folders
+    const filteredFolders = mentionQuery
+      ? folders.filter((folder) =>
+          folder.name.toLowerCase().includes(queryLower)
+        )
+      : folders;
+    
+    // Count notes per folder for display
+    for (const folder of filteredFolders.slice(0, 3)) {
+      const noteCount = notes.filter((n) => n.folderId === folder.id && !n.isDeleted).length;
+      // Only show folders with notes
+      if (noteCount > 0) {
+        results.push({
+          type: "folder",
+          id: folder.id,
+          name: folder.name,
+          noteCount,
+        });
+      }
+    }
+    
+    // Filter notes
+    const filteredNotes = mentionQuery
+      ? notes.filter(
+          (note) =>
+            !note.isDeleted &&
+            (note.title.toLowerCase().includes(queryLower) ||
+            note.content?.toLowerCase().includes(queryLower))
+        )
+      : notes.filter((n) => !n.isDeleted);
+    
+    for (const note of filteredNotes.slice(0, 5 - results.length)) {
+      results.push({
+        type: "note",
+        id: note.id,
+        title: note.title,
+        content: note.content,
+      });
+    }
+    
+    return results;
+  }, [mentionQuery, notes, folders]);
 
   // Get plain text content from the contenteditable (with @mentions preserved)
   const getTextContent = useCallback((): string => {
@@ -60,9 +118,54 @@ export function ChatInput() {
     return text;
   }, []);
 
+  // Get all badge names currently in the input
+  const getBadgesInInput = useCallback((): { notes: Set<string>; folders: Set<string> } => {
+    const noteNames = new Set<string>();
+    const folderNames = new Set<string>();
+    
+    if (!inputRef.current) return { notes: noteNames, folders: folderNames };
+    
+    const badges = inputRef.current.querySelectorAll(".mention-badge");
+    badges.forEach((badge) => {
+      const name = badge.getAttribute("data-mention");
+      const type = badge.getAttribute("data-mention-type");
+      if (name) {
+        if (type === "folder") {
+          folderNames.add(name);
+        } else {
+          noteNames.add(name);
+        }
+      }
+    });
+    
+    return { notes: noteNames, folders: folderNames };
+  }, []);
+
+  // Sync context with badges in input (remove context items without badges)
+  const syncContextWithBadges = useCallback(() => {
+    const { notes: noteBadges, folders: folderBadges } = getBadgesInInput();
+    
+    // Remove notes that no longer have badges
+    for (const item of attachedContext) {
+      if (!noteBadges.has(item.noteTitle)) {
+        removeContext(item.noteId);
+      }
+    }
+    
+    // Remove folders that no longer have badges
+    for (const folder of attachedFolders) {
+      if (!folderBadges.has(folder.folderName)) {
+        removeFolderContext(folder.folderId);
+      }
+    }
+  }, [getBadgesInInput, attachedContext, attachedFolders, removeContext, removeFolderContext]);
+
   // Handle input changes
   const handleInput = useCallback(() => {
     if (!inputRef.current) return;
+    
+    // Sync context with badges (remove context items if their badges were deleted)
+    syncContextWithBadges();
     
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) {
@@ -110,15 +213,24 @@ export function ChatInput() {
       setMentionQuery("");
       setMentionStartOffset(null);
     }
-  }, []);
+  }, [syncContextWithBadges]);
 
-  // Insert mention badge at current position
-  const insertMentionBadge = useCallback((noteId: string, noteTitle: string) => {
+  // Insert mention badge at current position (for both notes and folders)
+  const insertMentionBadge = useCallback((
+    type: "note" | "folder",
+    id: string,
+    displayName: string,
+    noteCount?: number
+  ) => {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || !inputRef.current) return;
 
-    // Add to context
-    addContext(createNoteContext(noteId, noteTitle));
+    // Add to appropriate context
+    if (type === "folder") {
+      addFolderContext(createFolderContext(id, displayName, noteCount || 0));
+    } else {
+      addContext(createNoteContext(id, displayName));
+    }
 
     const range = selection.getRangeAt(0);
     const container = range.startContainer;
@@ -132,19 +244,32 @@ export function ChatInput() {
       const beforeMention = textContent.slice(0, mentionStartOffset);
       const afterMention = textContent.slice(cursorPos);
       
-      // Create the badge element
+      // Create the badge element (different icon for folders)
       const badge = document.createElement("span");
       badge.contentEditable = "false";
       badge.className = "mention-badge inline-flex items-center gap-1 rounded-full px-2 py-0.5 mx-0.5 text-xs font-medium align-baseline";
-      badge.style.backgroundColor = "var(--color-accent-light)";
-      badge.style.color = "var(--color-accent)";
-      badge.style.border = "1px solid var(--color-accent)";
-      badge.setAttribute("data-mention", noteTitle);
+      badge.style.backgroundColor = type === "folder" ? "var(--color-warning-light, #fef3c7)" : "var(--color-accent-light)";
+      badge.style.color = type === "folder" ? "var(--color-warning, #d97706)" : "var(--color-accent)";
+      badge.style.border = `1px solid ${type === "folder" ? "var(--color-warning, #d97706)" : "var(--color-accent)"}`;
+      badge.setAttribute("data-mention", displayName);
+      badge.setAttribute("data-mention-type", type);
+      
+      const icon = type === "folder"
+        ? `<svg class="h-3 w-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>`
+        : `<svg class="h-3 w-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>`;
+      
+      const countBadge = type === "folder" && noteCount 
+        ? `<span class="opacity-70">(${noteCount})</span>` 
+        : "";
+      
       badge.innerHTML = `
-        <svg class="h-3 w-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-        </svg>
-        <span class="max-w-[150px] truncate">${noteTitle}</span>
+        ${icon}
+        <span class="max-w-[150px] truncate">${displayName}</span>
+        ${countBadge}
       `;
 
       // Create text nodes for before and after
@@ -172,7 +297,73 @@ export function ChatInput() {
     setMentionQuery("");
     setMentionStartOffset(null);
     inputRef.current?.focus();
-  }, [addContext, mentionStartOffset]);
+  }, [addContext, addFolderContext, mentionStartOffset]);
+
+  // Append a badge to the end of input (for programmatic insertion from right-click)
+  const appendBadge = useCallback((
+    type: "note" | "folder",
+    displayName: string,
+    noteCount?: number
+  ) => {
+    if (!inputRef.current) return;
+
+    // Create the badge element
+    const badge = document.createElement("span");
+    badge.contentEditable = "false";
+    badge.className = "mention-badge inline-flex items-center gap-1 rounded-full px-2 py-0.5 mx-0.5 text-xs font-medium align-baseline";
+    badge.style.backgroundColor = type === "folder" ? "var(--color-warning-light, #fef3c7)" : "var(--color-accent-light)";
+    badge.style.color = type === "folder" ? "var(--color-warning, #d97706)" : "var(--color-accent)";
+    badge.style.border = `1px solid ${type === "folder" ? "var(--color-warning, #d97706)" : "var(--color-accent)"}`;
+    badge.setAttribute("data-mention", displayName);
+    badge.setAttribute("data-mention-type", type);
+    
+    const icon = type === "folder"
+      ? `<svg class="h-3 w-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+        </svg>`
+      : `<svg class="h-3 w-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>`;
+    
+    const countBadge = type === "folder" && noteCount 
+      ? `<span class="opacity-70">(${noteCount})</span>` 
+      : "";
+    
+    badge.innerHTML = `
+      ${icon}
+      <span class="max-w-[150px] truncate">${displayName}</span>
+      ${countBadge}
+    `;
+
+    // Append badge to the end of the input
+    inputRef.current.appendChild(badge);
+    
+    // Add a space after the badge and set cursor there
+    const spaceNode = document.createTextNode(" ");
+    inputRef.current.appendChild(spaceNode);
+    
+    // Move cursor to the end
+    const selection = window.getSelection();
+    if (selection) {
+      const newRange = document.createRange();
+      newRange.setStartAfter(spaceNode);
+      newRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(newRange);
+    }
+    
+    inputRef.current.focus();
+  }, []);
+
+  // Handle pending badges from right-click context menu
+  useEffect(() => {
+    if (pendingBadges.length > 0) {
+      for (const badge of pendingBadges) {
+        appendBadge(badge.type, badge.name, badge.noteCount);
+      }
+      clearPendingBadges();
+    }
+  }, [pendingBadges, appendBadge, clearPendingBadges]);
 
   // Handle keyboard navigation
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -195,7 +386,11 @@ export function ChatInput() {
         e.preventDefault();
         const selected = mentionResults[selectedMentionIndex];
         if (selected) {
-          insertMentionBadge(selected.id, selected.title);
+          if (selected.type === "folder") {
+            insertMentionBadge("folder", selected.id, selected.name, selected.noteCount);
+          } else {
+            insertMentionBadge("note", selected.id, selected.title);
+          }
         }
         return;
       }
@@ -233,12 +428,102 @@ export function ChatInput() {
     await sendMessage(text);
   };
 
-  // Handle paste to strip formatting
-  const handlePaste = (e: React.ClipboardEvent) => {
+  // Create a badge element for a mention
+  const createBadgeElement = useCallback((
+    type: "note" | "folder",
+    displayName: string,
+    noteCount?: number
+  ): HTMLSpanElement => {
+    const badge = document.createElement("span");
+    badge.contentEditable = "false";
+    badge.className = "mention-badge inline-flex items-center gap-1 rounded-full px-2 py-0.5 mx-0.5 text-xs font-medium align-baseline";
+    badge.style.backgroundColor = type === "folder" ? "var(--color-warning-light, #fef3c7)" : "var(--color-accent-light)";
+    badge.style.color = type === "folder" ? "var(--color-warning, #d97706)" : "var(--color-accent)";
+    badge.style.border = `1px solid ${type === "folder" ? "var(--color-warning, #d97706)" : "var(--color-accent)"}`;
+    badge.setAttribute("data-mention", displayName);
+    badge.setAttribute("data-mention-type", type);
+    
+    const icon = type === "folder"
+      ? `<svg class="h-3 w-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+        </svg>`
+      : `<svg class="h-3 w-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>`;
+    
+    const countBadge = type === "folder" && noteCount 
+      ? `<span class="opacity-70">(${noteCount})</span>` 
+      : "";
+    
+    badge.innerHTML = `
+      ${icon}
+      <span class="max-w-[150px] truncate">${displayName}</span>
+      ${countBadge}
+    `;
+    
+    return badge;
+  }, []);
+
+  // Handle paste - detect and convert @mentions to badges
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
     e.preventDefault();
     const text = e.clipboardData.getData("text/plain");
-    document.execCommand("insertText", false, text);
-  };
+    
+    if (!inputRef.current) {
+      document.execCommand("insertText", false, text);
+      return;
+    }
+    
+    // Get note titles for mention detection
+    const noteTitles = notes.map((n) => n.title);
+    const segments = parseMentions(text, noteTitles);
+    
+    // If no mentions found, just insert plain text
+    if (!segments.some(s => s.type === "mention")) {
+      document.execCommand("insertText", false, text);
+      return;
+    }
+    
+    // Insert segments with mention badges
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      document.execCommand("insertText", false, text);
+      return;
+    }
+    
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    
+    // Create a document fragment to hold all the content
+    const fragment = document.createDocumentFragment();
+    
+    for (const segment of segments) {
+      if (segment.type === "mention") {
+        // Find the note and add to context
+        const note = notes.find(n => n.title.toLowerCase() === segment.content.toLowerCase());
+        if (note) {
+          addContext(createNoteContext(note.id, note.title));
+          const badge = createBadgeElement("note", note.title);
+          fragment.appendChild(badge);
+        } else {
+          // Note not found, just insert as text with @
+          fragment.appendChild(document.createTextNode(`@${segment.content}`));
+        }
+      } else {
+        fragment.appendChild(document.createTextNode(segment.content));
+      }
+    }
+    
+    range.insertNode(fragment);
+    
+    // Move cursor to end of inserted content
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    
+    // Trigger input handler to sync state
+    handleInput();
+  }, [notes, addContext, createBadgeElement, handleInput]);
 
   const isDisabled = isStreaming || isLoading;
 
@@ -261,12 +546,18 @@ export function ChatInput() {
               className="px-2 py-1 text-xs font-medium"
               style={{ color: "var(--color-text-tertiary)" }}
             >
-              Add note as context
+              Add folder or note as context
             </div>
-            {mentionResults.map((note, index) => (
+            {mentionResults.map((result, index) => (
               <button
-                key={note.id}
-                onClick={() => insertMentionBadge(note.id, note.title)}
+                key={`${result.type}-${result.id}`}
+                onClick={() => {
+                  if (result.type === "folder") {
+                    insertMentionBadge("folder", result.id, result.name, result.noteCount);
+                  } else {
+                    insertMentionBadge("note", result.id, result.title);
+                  }
+                }}
                 className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors"
                 style={{
                   backgroundColor:
@@ -275,34 +566,59 @@ export function ChatInput() {
                       : "transparent",
                 }}
               >
-                <svg
-                  className="h-4 w-4 flex-shrink-0"
-                  style={{ color: "var(--color-text-tertiary)" }}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
+                {result.type === "folder" ? (
+                  <svg
+                    className="h-4 w-4 flex-shrink-0"
+                    style={{ color: "var(--color-warning, #d97706)" }}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                    />
+                  </svg>
+                ) : (
+                  <svg
+                    className="h-4 w-4 flex-shrink-0"
+                    style={{ color: "var(--color-text-tertiary)" }}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                )}
                 <div className="min-w-0 flex-1">
                   <div
-                    className="truncate text-sm"
+                    className="flex items-center gap-2 truncate text-sm"
                     style={{ color: "var(--color-text-primary)" }}
                   >
-                    {note.title}
+                    {result.type === "folder" ? result.name : result.title}
+                    {result.type === "folder" && (
+                      <span
+                        className="text-xs"
+                        style={{ color: "var(--color-text-tertiary)" }}
+                      >
+                        ({result.noteCount} note{result.noteCount !== 1 ? "s" : ""})
+                      </span>
+                    )}
                   </div>
-                  {note.content && (
+                  {result.type === "note" && result.content && (
                     <div
                       className="truncate text-xs"
                       style={{ color: "var(--color-text-tertiary)" }}
                     >
-                      {note.content.slice(0, 50)}
-                      {note.content.length > 50 ? "..." : ""}
+                      {result.content.slice(0, 50)}
+                      {result.content.length > 50 ? "..." : ""}
                     </div>
                   )}
                 </div>
@@ -389,7 +705,7 @@ export function ChatInput() {
       >
         {isStreaming 
           ? "Press Esc or click stop to cancel generation" 
-          : "Press Enter to send • Shift+Enter for new line • @ to add notes"
+          : "Press Enter to send • Shift+Enter for new line • @ to add notes or folders"
         }
       </div>
     </div>

@@ -17,6 +17,7 @@ use super::oauth::{refresh_token_if_needed_with_pool, urlencoding, GoogleAuthErr
 const GOOGLE_CALENDAR_API: &str = "https://www.googleapis.com/calendar/v3";
 
 #[derive(Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum GoogleCalendarError {
     #[error("Auth error: {0}")]
     AuthError(#[from] GoogleAuthError),
@@ -419,10 +420,10 @@ pub async fn sync_events_to_db_with_pool(
         if is_in_range {
             if let Some(ref external_id) = event.external_id {
                 // If this event wasn't returned by Google, it was deleted
-                if !google_event_ids.contains(external_id) {
-                    if calendar_events::delete_event(&conn, &event.id).is_ok() {
-                        result.events_removed += 1;
-                    }
+                if !google_event_ids.contains(external_id)
+                    && calendar_events::delete_event(&conn, &event.id).is_ok()
+                {
+                    result.events_removed += 1;
                 }
             }
         }

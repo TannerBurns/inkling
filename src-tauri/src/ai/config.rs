@@ -11,6 +11,7 @@ use std::env;
 /// Type of AI provider
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[allow(clippy::upper_case_acronyms)]
 pub enum ProviderType {
     OpenAI,
     Anthropic,

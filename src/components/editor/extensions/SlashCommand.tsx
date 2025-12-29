@@ -21,6 +21,7 @@ import {
   Minus,
   GitMerge,
   Table,
+  Link2,
 } from "lucide-react";
 
 export interface SlashCommandOptions {
@@ -203,6 +204,23 @@ const MEDIA_COMMANDS: CommandItem[] = [
       editor.chain().focus().deleteRange(range).setMermaidBlock().run();
     },
   },
+  {
+    id: "url-embed",
+    title: "URL Preview",
+    description: "Embed a link with rich preview card",
+    icon: Link2,
+    category: "media",
+    command: (editor, range) => {
+      // Prompt for URL
+      const url = window.prompt("Enter URL:");
+      if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
+        editor.chain().focus().deleteRange(range).insertUrlEmbed(url).run();
+      } else if (url) {
+        // Try with https:// prefix
+        editor.chain().focus().deleteRange(range).insertUrlEmbed(`https://${url}`).run();
+      }
+    },
+  },
 ];
 
 const ALL_COMMANDS = [...AI_COMMANDS, ...MEDIA_COMMANDS, ...BASIC_COMMANDS];
@@ -211,7 +229,7 @@ const ALL_COMMANDS = [...AI_COMMANDS, ...MEDIA_COMMANDS, ...BASIC_COMMANDS];
  * SlashCommand extension for TipTap
  * Shows a command menu when typing / at the start of a line
  */
-export const SlashCommand = Extension.create<SlashCommandOptions>({
+export const slashCommand = Extension.create<SlashCommandOptions>({
   name: "slashCommand",
 
   addOptions() {
@@ -522,4 +540,4 @@ function CommandButton({
   );
 }
 
-export default SlashCommand;
+export default slashCommand;
