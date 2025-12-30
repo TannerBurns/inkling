@@ -115,6 +115,23 @@ pub fn get_inline_assistant_tools(config: &AgentConfig) -> Vec<ToolDefinition> {
 /// while still leaving room for the system prompt and conversation
 const MAX_NOTE_CONTEXT_CHARS: usize = 32000;
 
+/// Extract content from write_content tool calls
+/// 
+/// The inline assistant uses write_content to output the final markdown content.
+/// This function extracts the content from the most recent write_content call,
+/// which should be used instead of the LLM's conversational response.
+fn extract_write_content(tool_calls: &[ToolCallRecord]) -> Option<String> {
+    // Find the last write_content tool call (in case there are multiple)
+    tool_calls
+        .iter()
+        .rev()
+        .find(|tc| tc.tool_name == "write_content")
+        .and_then(|tc| {
+            // The content is in the arguments, not the result
+            tc.arguments.get("content").and_then(|v| v.as_str()).map(|s| s.to_string())
+        })
+}
+
 /// Build the system prompt with optional note context
 fn build_system_prompt(note_context: Option<&str>) -> String {
     let mut prompt = INLINE_ASSISTANT_SYSTEM_PROMPT.to_string();
@@ -223,8 +240,14 @@ pub async fn run_inline_assistant_with_events(
         .into_iter()
         .collect();
 
+    // Extract content from write_content tool calls if present
+    // The write_content tool is the primary way for the inline assistant to output content
+    // We should use its content instead of the LLM's final conversational response
+    let final_content = extract_write_content(&result.tool_calls)
+        .unwrap_or(result.content);
+
     Ok(InlineAssistantResult {
-        content: result.content,
+        content: final_content,
         tools_used,
         iterations: result.iterations,
         tool_calls: result.tool_calls,
@@ -257,5 +280,60 @@ mod tests {
         let prompt_with_context = build_system_prompt(Some("Test note content"));
         assert!(prompt_with_context.contains("CURRENT NOTE CONTEXT"));
         assert!(prompt_with_context.contains("Test note content"));
+    }
+
+    #[test]
+    fn test_extract_write_content() {
+        // Test with write_content tool call
+        let tool_calls = vec![
+            ToolCallRecord {
+                tool_name: "create_mermaid".to_string(),
+                arguments: serde_json::json!({"type": "flowchart"}),
+                result: "success".to_string(),
+            },
+            ToolCallRecord {
+                tool_name: "write_content".to_string(),
+                arguments: serde_json::json!({"content": "## My Heading\n\nSome content here"}),
+                result: r#"{"success":true}"#.to_string(),
+            },
+        ];
+        
+        let content = extract_write_content(&tool_calls);
+        assert_eq!(content, Some("## My Heading\n\nSome content here".to_string()));
+    }
+
+    #[test]
+    fn test_extract_write_content_no_write_content() {
+        // Test without write_content tool call - should return None
+        let tool_calls = vec![
+            ToolCallRecord {
+                tool_name: "search_notes".to_string(),
+                arguments: serde_json::json!({"query": "test"}),
+                result: "found notes".to_string(),
+            },
+        ];
+        
+        let content = extract_write_content(&tool_calls);
+        assert_eq!(content, None);
+    }
+
+    #[test]
+    fn test_extract_write_content_multiple_calls() {
+        // Test with multiple write_content calls - should return the last one
+        let tool_calls = vec![
+            ToolCallRecord {
+                tool_name: "write_content".to_string(),
+                arguments: serde_json::json!({"content": "First draft"}),
+                result: r#"{"success":true}"#.to_string(),
+            },
+            ToolCallRecord {
+                tool_name: "write_content".to_string(),
+                arguments: serde_json::json!({"content": "Final version"}),
+                result: r#"{"success":true}"#.to_string(),
+            },
+        ];
+        
+        let content = extract_write_content(&tool_calls);
+        assert_eq!(content, Some("Final version".to_string()));
     }
 }
