@@ -1,8 +1,9 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Edit3, Check, X, AlertCircle } from "lucide-react";
+import { Check, X, AlertCircle, Code, MousePointer2 } from "lucide-react";
 import mermaid from "mermaid";
+import { FlowchartEditor } from "./FlowchartEditor";
 
 // Get the theme based on system/user preference
 function getMermaidTheme(): "default" | "dark" {
@@ -23,6 +24,12 @@ mermaid.initialize({
   fontFamily: "inherit",
 });
 
+// Check if code is a flowchart (can be edited visually)
+function isFlowchartCode(code: string): boolean {
+  const trimmed = code.trim().toLowerCase();
+  return trimmed.startsWith("flowchart") || trimmed.startsWith("graph");
+}
+
 export interface MermaidBlockAttrs {
   code: string;
 }
@@ -35,13 +42,20 @@ declare module "@tiptap/core" {
   }
 }
 
+// Edit mode type
+type EditMode = "visual" | "code";
+
 function MermaidBlockComponent({ node, updateAttributes, selected }: NodeViewProps) {
   const attrs = node.attrs as MermaidBlockAttrs;
   const containerRef = useRef<HTMLDivElement>(null);
   const [isEditing, setIsEditing] = useState(!attrs.code);
+  const [editMode, setEditMode] = useState<EditMode>("visual");
   const [editValue, setEditValue] = useState(attrs.code || "");
   const [error, setError] = useState<string | null>(null);
   const [svgContent, setSvgContent] = useState<string>("");
+
+  // Check if current code can be edited visually
+  const canEditVisually = !attrs.code || isFlowchartCode(attrs.code);
 
   // Render the mermaid diagram
   const renderDiagram = useCallback(async (code: string) => {
@@ -84,7 +98,7 @@ function MermaidBlockComponent({ node, updateAttributes, selected }: NodeViewPro
     }
   }, [attrs.code, isEditing, renderDiagram]);
 
-  // Handle save
+  // Handle save from code editor
   const handleSave = useCallback(() => {
     updateAttributes({ code: editValue });
     setIsEditing(false);
@@ -100,7 +114,19 @@ function MermaidBlockComponent({ node, updateAttributes, selected }: NodeViewPro
     }
   }, [attrs.code, renderDiagram]);
 
-  // Handle key events
+  // Handle code change from visual editor
+  const handleVisualCodeChange = useCallback((code: string) => {
+    setEditValue(code);
+  }, []);
+
+  // Handle save from visual editor
+  const handleVisualSave = useCallback(() => {
+    updateAttributes({ code: editValue });
+    setIsEditing(false);
+    renderDiagram(editValue);
+  }, [editValue, updateAttributes, renderDiagram]);
+
+  // Handle key events for code mode
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       handleCancel();
@@ -108,6 +134,13 @@ function MermaidBlockComponent({ node, updateAttributes, selected }: NodeViewPro
       handleSave();
     }
   }, [handleCancel, handleSave]);
+
+  // Start editing
+  const startEditing = useCallback((mode: EditMode) => {
+    setEditValue(attrs.code || "");
+    setEditMode(mode);
+    setIsEditing(true);
+  }, [attrs.code]);
 
   return (
     <NodeViewWrapper className="mermaid-block my-4">
@@ -130,71 +163,185 @@ function MermaidBlockComponent({ node, updateAttributes, selected }: NodeViewPro
             style={{ color: "var(--color-text-tertiary)" }}
           >
             Mermaid Diagram
+            {isEditing && (
+              <span className="ml-2">
+                ({editMode === "visual" ? "Visual Editor" : "Code Editor"})
+              </span>
+            )}
           </span>
-          {!isEditing && (
-            <button
-              onClick={() => {
-                setEditValue(attrs.code || "");
-                setIsEditing(true);
-              }}
-              className="rounded p-1 transition-colors hover:bg-black/10"
-              title="Edit diagram"
-            >
-              <Edit3 size={14} style={{ color: "var(--color-text-tertiary)" }} />
-            </button>
-          )}
+          
+          {/* Edit mode toggle and buttons */}
+          <div className="flex items-center gap-1">
+            {isEditing ? (
+              <>
+                {/* Mode toggle buttons */}
+                <div
+                  className="mr-2 flex rounded-md border"
+                  style={{ borderColor: "var(--color-border)" }}
+                >
+                  {canEditVisually && (
+                    <button
+                      onClick={() => setEditMode("visual")}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs transition-colors ${
+                        editMode === "visual" ? "font-medium" : ""
+                      }`}
+                      style={{
+                        backgroundColor: editMode === "visual" 
+                          ? "var(--color-accent)" 
+                          : "transparent",
+                        color: editMode === "visual" 
+                          ? "white" 
+                          : "var(--color-text-secondary)",
+                        borderRadius: "5px 0 0 5px",
+                      }}
+                      title="Visual editor"
+                    >
+                      <MousePointer2 size={12} />
+                      Visual
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setEditMode("code")}
+                    className={`flex items-center gap-1 px-2 py-1 text-xs transition-colors ${
+                      editMode === "code" ? "font-medium" : ""
+                    }`}
+                    style={{
+                      backgroundColor: editMode === "code" 
+                        ? "var(--color-accent)" 
+                        : "transparent",
+                      color: editMode === "code" 
+                        ? "white" 
+                        : "var(--color-text-secondary)",
+                      borderRadius: canEditVisually ? "0 5px 5px 0" : "5px",
+                    }}
+                    title="Code editor"
+                  >
+                    <Code size={12} />
+                    Code
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Edit buttons when not editing */}
+                {canEditVisually && (
+                  <button
+                    onClick={() => startEditing("visual")}
+                    className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-black/10"
+                    title="Edit visually"
+                    style={{ color: "var(--color-text-tertiary)" }}
+                  >
+                    <MousePointer2 size={12} />
+                    Visual
+                  </button>
+                )}
+                <button
+                  onClick={() => startEditing("code")}
+                  className="flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors hover:bg-black/10"
+                  title="Edit code"
+                  style={{ color: "var(--color-text-tertiary)" }}
+                >
+                  <Code size={12} />
+                  Code
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Content */}
-        <div className="p-4">
+        <div className={isEditing && editMode === "visual" ? "" : "p-4"}>
           {isEditing ? (
-            <div className="space-y-3">
-              <textarea
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={`graph TD
+            editMode === "visual" ? (
+              // Visual editor mode
+              <div className="flex flex-col">
+                <div style={{ height: "400px" }}>
+                  <FlowchartEditor
+                    initialCode={attrs.code}
+                    onCodeChange={handleVisualCodeChange}
+                  />
+                </div>
+                <div
+                  className="flex items-center gap-2 border-t px-4 py-3"
+                  style={{ borderColor: "var(--color-border)" }}
+                >
+                  <button
+                    onClick={handleVisualSave}
+                    className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-colors"
+                    style={{ backgroundColor: "var(--color-accent)" }}
+                  >
+                    <Check size={14} />
+                    Save Diagram
+                  </button>
+                  <button
+                    onClick={handleCancel}
+                    className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+                    style={{
+                      backgroundColor: "var(--color-bg-tertiary)",
+                      color: "var(--color-text-secondary)",
+                    }}
+                  >
+                    <X size={14} />
+                    Cancel
+                  </button>
+                  <span
+                    className="ml-auto text-xs"
+                    style={{ color: "var(--color-text-tertiary)" }}
+                  >
+                    Drag nodes to position • Double-click to edit text • Connect handles to create edges
+                  </span>
+                </div>
+              </div>
+            ) : (
+              // Code editor mode
+              <div className="space-y-3">
+                <textarea
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={`flowchart TD
   A[Start] --> B{Decision}
   B -->|Yes| C[Do something]
   B -->|No| D[Do something else]`}
-                className="w-full rounded-lg border p-3 font-mono text-sm"
-                style={{
-                  backgroundColor: "var(--color-bg-primary)",
-                  borderColor: "var(--color-border)",
-                  color: "var(--color-text-primary)",
-                  minHeight: "120px",
-                  resize: "vertical",
-                }}
-                autoFocus
-              />
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleSave}
-                  className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-colors"
-                  style={{ backgroundColor: "var(--color-accent)" }}
-                >
-                  <Check size={14} />
-                  Save
-                </button>
-                <button
-                  onClick={handleCancel}
-                  className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+                  className="w-full rounded-lg border p-3 font-mono text-sm"
                   style={{
-                    backgroundColor: "var(--color-bg-tertiary)",
-                    color: "var(--color-text-secondary)",
+                    backgroundColor: "var(--color-bg-primary)",
+                    borderColor: "var(--color-border)",
+                    color: "var(--color-text-primary)",
+                    minHeight: "120px",
+                    resize: "vertical",
                   }}
-                >
-                  <X size={14} />
-                  Cancel
-                </button>
-                <span
-                  className="ml-auto text-xs"
-                  style={{ color: "var(--color-text-tertiary)" }}
-                >
-                  ⌘+Enter to save, Esc to cancel
-                </span>
+                  autoFocus
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSave}
+                    className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-colors"
+                    style={{ backgroundColor: "var(--color-accent)" }}
+                  >
+                    <Check size={14} />
+                    Save
+                  </button>
+                  <button
+                    onClick={handleCancel}
+                    className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+                    style={{
+                      backgroundColor: "var(--color-bg-tertiary)",
+                      color: "var(--color-text-secondary)",
+                    }}
+                  >
+                    <X size={14} />
+                    Cancel
+                  </button>
+                  <span
+                    className="ml-auto text-xs"
+                    style={{ color: "var(--color-text-tertiary)" }}
+                  >
+                    ⌘+Enter to save, Esc to cancel
+                  </span>
+                </div>
               </div>
-            </div>
+            )
           ) : error ? (
             <div
               className="flex items-start gap-2 rounded-lg p-3"
@@ -221,7 +368,7 @@ function MermaidBlockComponent({ node, updateAttributes, selected }: NodeViewPro
                   {error}
                 </p>
                 <button
-                  onClick={() => setIsEditing(true)}
+                  onClick={() => startEditing("code")}
                   className="mt-2 text-xs underline"
                   style={{ color: "var(--color-accent)" }}
                 >
@@ -237,10 +384,34 @@ function MermaidBlockComponent({ node, updateAttributes, selected }: NodeViewPro
             />
           ) : (
             <div
-              className="flex items-center justify-center py-8 text-sm"
+              className="flex flex-col items-center justify-center gap-3 py-8"
               style={{ color: "var(--color-text-tertiary)" }}
             >
-              No diagram code. Click edit to add.
+              <p className="text-sm">No diagram yet</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => startEditing("visual")}
+                  className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+                  style={{
+                    backgroundColor: "var(--color-accent)",
+                    color: "white",
+                  }}
+                >
+                  <MousePointer2 size={14} />
+                  Create Visually
+                </button>
+                <button
+                  onClick={() => startEditing("code")}
+                  className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+                  style={{
+                    backgroundColor: "var(--color-bg-tertiary)",
+                    color: "var(--color-text-secondary)",
+                  }}
+                >
+                  <Code size={14} />
+                  Write Code
+                </button>
+              </div>
             </div>
           )}
         </div>
