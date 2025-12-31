@@ -106,8 +106,8 @@ export const NoteMentionList = forwardRef<NoteMentionListRef, NoteMentionListPro
         style={{
           backgroundColor: "var(--color-bg-primary)",
           borderColor: "var(--color-border)",
-          minWidth: "240px",
-          maxWidth: "320px",
+          minWidth: "280px",
+          maxWidth: "400px",
         }}
       >
         {/* Header */}
@@ -176,13 +176,13 @@ export const NoteMentionList = forwardRef<NoteMentionListRef, NoteMentionListPro
                   >
                     {note.title}
                   </div>
-                  {note.folderId && (
+                  {note.folderPath && (
                     <div
                       className="flex items-center gap-1 text-xs"
                       style={{ color: "var(--color-text-tertiary)" }}
                     >
                       <Folder size={10} />
-                      <span className="truncate">In folder</span>
+                      <span className="truncate">{note.folderPath}</span>
                     </div>
                   )}
                 </div>

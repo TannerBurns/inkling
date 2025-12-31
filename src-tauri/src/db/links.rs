@@ -3,7 +3,7 @@
 //! Manages the `note_links` table that tracks connections between notes
 //! created via `[[note]]` syntax.
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -179,13 +179,60 @@ pub fn get_link_stats(conn: &Connection, note_id: &str) -> Result<LinkStats, Lin
 }
 
 /// Search notes by title for autocomplete
-/// Returns note ID and title for matching notes
+/// Returns note ID, title, and folder path for matching notes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NoteSummary {
     pub id: String,
     pub title: String,
     pub folder_id: Option<String>,
+    /// Folder path showing up to 3 levels of folder hierarchy (e.g., "Parent / Child / Grandchild")
+    pub folder_path: Option<String>,
+}
+
+/// Build a folder path string by traversing up the parent hierarchy (up to 3 levels)
+fn build_folder_path(
+    conn: &Connection,
+    folder_id: Option<&str>,
+) -> Result<Option<String>, LinkDbError> {
+    let folder_id = match folder_id {
+        Some(id) => id,
+        None => return Ok(None),
+    };
+
+    // Collect folder names from bottom to top (up to 3 levels)
+    let mut path_parts: Vec<String> = Vec::new();
+    let mut current_id: Option<String> = Some(folder_id.to_string());
+
+    for _ in 0..3 {
+        if let Some(id) = &current_id {
+            let result: Option<(String, Option<String>)> = conn
+                .query_row(
+                    "SELECT name, parent_id FROM folders WHERE id = ?1",
+                    [id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+
+            match result {
+                Some((name, parent_id)) => {
+                    path_parts.push(name);
+                    current_id = parent_id;
+                }
+                None => break,
+            }
+        } else {
+            break;
+        }
+    }
+
+    if path_parts.is_empty() {
+        return Ok(None);
+    }
+
+    // Reverse to get top-to-bottom order and join with " / "
+    path_parts.reverse();
+    Ok(Some(path_parts.join(" / ")))
 }
 
 pub fn search_notes_by_title(
@@ -196,42 +243,49 @@ pub fn search_notes_by_title(
 ) -> Result<Vec<NoteSummary>, LinkDbError> {
     let search_pattern = format!("%{}%", query);
 
-    let mut stmt = if let Some(exclude) = exclude_id {
+    // First, get the basic note info
+    let notes: Vec<(String, String, Option<String>)> = if let Some(exclude) = exclude_id {
         let mut stmt = conn.prepare(
             "SELECT id, title, folder_id FROM notes
              WHERE title LIKE ?1 AND is_deleted = FALSE AND id != ?2
              ORDER BY updated_at DESC
              LIMIT ?3",
         )?;
-        let results = stmt
+        let results: Vec<(String, String, Option<String>)> = stmt
             .query_map(params![search_pattern, exclude, limit as i64], |row| {
-                Ok(NoteSummary {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    folder_id: row.get(2)?,
-                })
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })?
             .filter_map(Result::ok)
             .collect();
-        return Ok(results);
+        results
     } else {
-        conn.prepare(
+        let mut stmt = conn.prepare(
             "SELECT id, title, folder_id FROM notes
              WHERE title LIKE ?1 AND is_deleted = FALSE
              ORDER BY updated_at DESC
              LIMIT ?2",
-        )?
+        )?;
+        let results: Vec<(String, String, Option<String>)> = stmt
+            .query_map(params![search_pattern, limit as i64], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?
+            .filter_map(Result::ok)
+            .collect();
+        results
     };
 
-    let results = stmt
-        .query_map(params![search_pattern, limit as i64], |row| {
-            Ok(NoteSummary {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                folder_id: row.get(2)?,
-            })
-        })?
-        .filter_map(Result::ok)
+    // Build folder paths for each note
+    let results: Vec<NoteSummary> = notes
+        .into_iter()
+        .map(|(id, title, folder_id)| {
+            let folder_path = build_folder_path(conn, folder_id.as_deref()).unwrap_or(None);
+            NoteSummary {
+                id,
+                title,
+                folder_id,
+                folder_path,
+            }
+        })
         .collect();
 
     Ok(results)

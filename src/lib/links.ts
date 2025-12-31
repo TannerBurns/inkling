@@ -27,6 +27,8 @@ export interface NoteSummary {
   id: string;
   title: string;
   folderId: string | null;
+  /** Folder path showing up to 3 levels of folder hierarchy (e.g., "Parent / Child / Grandchild") */
+  folderPath: string | null;
 }
 
 /** A note link */
