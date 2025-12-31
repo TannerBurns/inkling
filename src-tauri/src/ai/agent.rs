@@ -53,7 +53,8 @@ fn convert_messages_to_llm(messages: &[AgentMessage]) -> Vec<ChatMessage> {
                         name: c.function.name.clone(),
                         arguments: c.function.arguments.clone(),
                     },
-                    thought_signature: None, // Not preserved across chat sessions
+                    // Preserve thought_signature for Google Gemini API
+                    thought_signature: c.thought_signature.clone(),
                 }).collect()
             }),
             tool_call_id: m.tool_call_id.clone(),
@@ -71,6 +72,8 @@ fn extract_tool_calls_from_response(response: &ChatResponse) -> Option<Vec<ToolC
                 arguments: c.function.arguments.clone(),
             },
             call_type: Some(c.call_type.clone()),
+            // Preserve thought_signature for Google Gemini API
+            thought_signature: c.thought_signature.clone(),
         }).collect()
     })
 }
@@ -218,6 +221,9 @@ pub struct ToolCall {
     pub function: FunctionCall,
     #[serde(rename = "type")]
     pub call_type: Option<String>,
+    /// Thought signature for Google Gemini API (required for thinking mode)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 /// Function call details
