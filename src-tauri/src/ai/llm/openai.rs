@@ -152,6 +152,7 @@ impl OpenAIClient {
                                 .send(StreamEvent::ToolCallStart {
                                     id: tc.id.clone(),
                                     name: tc.function.name.clone(),
+                                    thought_signature: None, // OpenAI doesn't use thought signatures
                                 })
                                 .await;
 
@@ -263,6 +264,7 @@ impl LlmClient for OpenAIClient {
                         name: c.function.name.clone(),
                         arguments: c.function.arguments.clone(),
                     },
+                    thought_signature: None, // OpenAI doesn't use thought signatures
                 })
                 .collect()
         });
@@ -413,6 +415,7 @@ impl LlmClient for OpenAIClient {
                                                             .send(StreamEvent::ToolCallStart {
                                                                 id: id.clone(),
                                                                 name: name.clone(),
+                                                                thought_signature: None, // OpenAI doesn't use thought signatures
                                                             })
                                                             .await;
                                                     }

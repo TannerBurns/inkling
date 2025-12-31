@@ -53,6 +53,7 @@ fn convert_messages_to_llm(messages: &[AgentMessage]) -> Vec<ChatMessage> {
                         name: c.function.name.clone(),
                         arguments: c.function.arguments.clone(),
                     },
+                    thought_signature: None, // Not preserved across chat sessions
                 }).collect()
             }),
             tool_call_id: m.tool_call_id.clone(),

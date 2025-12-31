@@ -1,6 +1,6 @@
 //! Embedding generation for AI providers
 //!
-//! Supports both local (Ollama/LM Studio) and cloud (OpenAI) embeddings.
+//! Supports both local (Ollama/LM Studio) and cloud (OpenAI, Google) embeddings.
 //!
 //! NOTE: Contains utility functions for future embedding features.
 
@@ -17,7 +17,11 @@ pub enum EmbeddingError {
     EmptyEmbedding,
 }
 
-/// Request body for the embeddings API
+// ============================================================================
+// OpenAI-compatible API types (used by OpenAI, Ollama, LM Studio, VLLM)
+// ============================================================================
+
+/// Request body for the OpenAI-compatible embeddings API
 #[derive(Debug, Serialize)]
 struct EmbeddingRequest<'a> {
     model: &'a str,
@@ -35,7 +39,7 @@ enum EmbeddingInput<'a> {
     Single(&'a str),
 }
 
-/// Response from the embeddings API
+/// Response from the OpenAI-compatible embeddings API
 #[derive(Debug, Deserialize)]
 struct EmbeddingResponse {
     data: Vec<EmbeddingData>,
@@ -57,6 +61,37 @@ struct EmbeddingUsage {
     total_tokens: u32,
 }
 
+// ============================================================================
+// Google Gemini API types
+// ============================================================================
+
+/// Request body for Google's embedContent endpoint
+#[derive(Debug, Serialize)]
+struct GoogleEmbeddingRequest<'a> {
+    content: GoogleContent<'a>,
+}
+
+#[derive(Debug, Serialize)]
+struct GoogleContent<'a> {
+    parts: Vec<GooglePart<'a>>,
+}
+
+#[derive(Debug, Serialize)]
+struct GooglePart<'a> {
+    text: &'a str,
+}
+
+/// Response from Google's embedContent endpoint
+#[derive(Debug, Deserialize)]
+struct GoogleEmbeddingResponse {
+    embedding: GoogleEmbedding,
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleEmbedding {
+    values: Vec<f32>,
+}
+
 /// Result of generating an embedding
 #[derive(Debug, Clone, Serialize)]
 pub struct EmbeddingResult {
@@ -70,20 +105,91 @@ pub struct EmbeddingResult {
     pub tokens_used: Option<u32>,
 }
 
+/// Generate an embedding using Google's Gemini API
+///
+/// Google uses a different API format than OpenAI-compatible providers.
+/// Endpoint: https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent
+/// Auth: x-goog-api-key header
+async fn generate_google_embedding(
+    text: &str,
+    model_name: &str,
+    api_key: Option<&str>,
+) -> Result<EmbeddingResult, EmbeddingError> {
+    let client = reqwest::Client::new();
+    
+    let api_key = api_key.ok_or_else(|| {
+        EmbeddingError::ApiError("Google API key is required for Gemini embeddings".to_string())
+    })?;
+    
+    if api_key.is_empty() {
+        return Err(EmbeddingError::ApiError(
+            "Google API key is required for Gemini embeddings".to_string()
+        ));
+    }
+    
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:embedContent",
+        model_name
+    );
+    
+    log::info!("[Google Embedding] Sending request to: {} with model: {}", url, model_name);
+    
+    let request = GoogleEmbeddingRequest {
+        content: GoogleContent {
+            parts: vec![GooglePart { text }],
+        },
+    };
+    
+    let response = client
+        .post(&url)
+        .header("x-goog-api-key", api_key)
+        .header("Content-Type", "application/json")
+        .json(&request)
+        .send()
+        .await?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(EmbeddingError::ApiError(format!(
+            "Google API error - Status {}: {}",
+            status, error_text
+        )));
+    }
+    
+    let response: GoogleEmbeddingResponse = response.json().await?;
+    
+    if response.embedding.values.is_empty() {
+        return Err(EmbeddingError::EmptyEmbedding);
+    }
+    
+    Ok(EmbeddingResult {
+        dimension: response.embedding.values.len(),
+        embedding: response.embedding.values,
+        model: model_name.to_string(),
+        tokens_used: None, // Google doesn't return token usage for embeddings
+    })
+}
+
 /// Generate an embedding directly using provider URL
 /// 
 /// The model parameter should be in "provider/model" format (e.g., "lmstudio/model-name").
 /// The provider_url should be the base URL of the provider (e.g., "http://localhost:1234/v1").
-/// The api_key is required for cloud providers like OpenAI.
+/// The api_key is required for cloud providers like OpenAI and Google.
 pub async fn generate_embedding_direct(
     text: &str,
     model: &str,
     provider_url: Option<&str>,
     api_key: Option<&str>,
 ) -> Result<EmbeddingResult, EmbeddingError> {
+    // Check for Google provider - uses different API format
+    if let Some(model_name) = model.strip_prefix("google/") {
+        return generate_google_embedding(text, model_name, api_key).await;
+    }
+    
     let client = reqwest::Client::new();
     
-    // Determine URL and model name based on provider prefix
+    // Determine URL and model name based on provider prefix (OpenAI-compatible providers)
     let (url, model_name) = if let Some(base_url) = provider_url {
         let base = base_url.trim_end_matches('/');
         let model_name = if let Some(stripped) = model.strip_prefix("lmstudio/") {
@@ -275,6 +381,14 @@ const KNOWN_EMBEDDING_MODELS: &[KnownEmbeddingModel] = &[
         provider: "openai",
         is_local: false,
     },
+    // Google Gemini models
+    KnownEmbeddingModel {
+        model: "gemini-embedding-001",
+        display_name: "Gemini Embedding 001",
+        dimension: 768,
+        provider: "google",
+        is_local: false,
+    },
 ];
 
 /// Get information about known embedding models (static list)
@@ -304,5 +418,18 @@ mod tests {
         let nomic = models.iter().find(|m| m.id == "nomic-embed-text");
         assert!(nomic.is_some());
         assert_eq!(nomic.unwrap().dimension, 768);
+    }
+
+    #[test]
+    fn test_google_embedding_model_included() {
+        let models = get_embedding_models();
+        
+        // Check that gemini-embedding-001 is included
+        let gemini = models.iter().find(|m| m.id == "gemini-embedding-001");
+        assert!(gemini.is_some());
+        let gemini = gemini.unwrap();
+        assert_eq!(gemini.dimension, 768);
+        assert_eq!(gemini.provider, "google");
+        assert!(!gemini.is_local);
     }
 }

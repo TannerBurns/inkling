@@ -79,6 +79,8 @@ struct PendingToolCall {
     id: String,
     name: String,
     arguments: String,
+    /// Thought signature for Google Gemini API
+    thought_signature: Option<String>,
 }
 
 /// Run a streaming agent with tool calling
@@ -218,7 +220,7 @@ pub async fn run_streaming_agent<E: ToolExecutor>(
                         AgentStreamEvent::Thinking { content: delta },
                     );
                 }
-                StreamEvent::ToolCallStart { id, name } => {
+                StreamEvent::ToolCallStart { id, name, thought_signature } => {
                     log::info!("[StreamingAgent] Tool call started: {} ({})", name, id);
                     pending_tool_calls.insert(
                         id.clone(),
@@ -226,6 +228,7 @@ pub async fn run_streaming_agent<E: ToolExecutor>(
                             id,
                             name,
                             arguments: String::new(),
+                            thought_signature,
                         },
                     );
                 }
@@ -295,6 +298,7 @@ pub async fn run_streaming_agent<E: ToolExecutor>(
                         name: tc.name.clone(),
                         arguments: tc.arguments.clone(),
                     },
+                    thought_signature: tc.thought_signature.clone(),
                 })
                 .collect();
             

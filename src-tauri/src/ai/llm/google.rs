@@ -72,6 +72,8 @@ impl GoogleClient {
                                     args: serde_json::from_str(&tc.function.arguments)
                                         .unwrap_or(Value::Object(serde_json::Map::new())),
                                 },
+                                // Include thought_signature at part level for Gemini 2.5+ thinking mode
+                                thought_signature: tc.thought_signature.clone(),
                             });
                         }
                     }
@@ -212,7 +214,7 @@ impl LlmClient for GoogleClient {
                         content.push_str(t);
                     }
                 }
-                GeminiPart::FunctionCall { function_call } => {
+                GeminiPart::FunctionCall { function_call, thought_signature } => {
                     tool_calls.push(ToolCall {
                         id: format!("call_{}", tool_calls.len()),
                         call_type: "function".to_string(),
@@ -221,6 +223,7 @@ impl LlmClient for GoogleClient {
                             arguments: serde_json::to_string(&function_call.args)
                                 .unwrap_or_default(),
                         },
+                        thought_signature: thought_signature.clone(),
                     });
                 }
                 _ => {}
@@ -368,7 +371,7 @@ impl LlmClient for GoogleClient {
                                                             .await;
                                                     }
                                                 }
-                                                GeminiPart::FunctionCall { function_call } => {
+                                                GeminiPart::FunctionCall { function_call, thought_signature } => {
                                                     let id = format!("call_{}", tool_call_count);
                                                     tool_call_count += 1;
 
@@ -376,6 +379,7 @@ impl LlmClient for GoogleClient {
                                                         .send(StreamEvent::ToolCallStart {
                                                             id: id.clone(),
                                                             name: function_call.name.clone(),
+                                                            thought_signature: thought_signature.clone(),
                                                         })
                                                         .await;
 
@@ -456,6 +460,10 @@ enum GeminiPart {
     FunctionCall {
         #[serde(rename = "functionCall")]
         function_call: GeminiFunctionCall,
+        /// Thought signature required for Gemini 2.5+ thinking mode
+        /// This is at the part level, not inside functionCall
+        #[serde(rename = "thoughtSignature", skip_serializing_if = "Option::is_none")]
+        thought_signature: Option<String>,
     },
     FunctionResponse {
         #[serde(rename = "functionResponse")]

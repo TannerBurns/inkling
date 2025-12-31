@@ -627,13 +627,14 @@ function DefaultModelSelector({
 // ============================================================================
 
 // Providers that support embeddings
-const EMBEDDING_PROVIDERS = ["openai", "ollama", "lmstudio"];
+const EMBEDDING_PROVIDERS = ["openai", "ollama", "lmstudio", "google"];
 
 // Default embedding models for each provider (model name without provider prefix)
 const DEFAULT_EMBEDDING_MODELS: Record<string, { model: string; dimension: number }> = {
   openai: { model: "text-embedding-3-small", dimension: 1536 },
   ollama: { model: "nomic-embed-text", dimension: 768 },
   lmstudio: { model: "text-embedding-nomic-embed-text-v1.5@q4_k_m", dimension: 768 },
+  google: { model: "gemini-embedding-001", dimension: 768 },
 };
 
 interface ProviderCardProps {

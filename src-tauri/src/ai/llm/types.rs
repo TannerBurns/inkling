@@ -91,6 +91,10 @@ pub struct ToolCall {
     #[serde(rename = "type")]
     pub call_type: String,
     pub function: FunctionCall,
+    /// Thought signature for Google Gemini API (required for thinking mode)
+    /// This must be preserved and sent back when including function calls in history
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 /// Function call details within a tool call
@@ -176,6 +180,9 @@ pub enum StreamEvent {
     ToolCallStart {
         id: String,
         name: String,
+        /// Thought signature for Google Gemini API (required for thinking mode)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thought_signature: Option<String>,
     },
     /// Tool call arguments delta
     ToolCallDelta {
